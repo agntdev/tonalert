@@ -32,6 +32,7 @@ interface AlertEvent {
 }
 
 interface SessionData {
+  fiat: string;
   selectedToken?: TokenInfo;
   pendingRule?: { token: TokenInfo; type: string };
   watchlist: AlertRule[];
@@ -44,7 +45,7 @@ const bot = new Bot<MyContext>(BOT_TOKEN);
 
 bot.use(session({
   initial(): SessionData {
-    return { watchlist: [], alertHistory: [] };
+    return { fiat: "USD", watchlist: [], alertHistory: [] };
   },
 }));
 
@@ -87,17 +88,45 @@ function searchTokens(query: string): TokenInfo[] {
   ).slice(0, 3);
 }
 
+const FIAT_OPTIONS = [
+  { code: "USD", label: "USD ($)" },
+  { code: "EUR", label: "EUR (€)" },
+  { code: "GBP", label: "GBP (£)" },
+  { code: "RUB", label: "RUB (₽)" },
+];
+
 bot.command("start", async (ctx) => {
   const name = ctx.from?.first_name ?? "there";
+  const keyboard = new InlineKeyboard();
+  for (const fiat of FIAT_OPTIONS) {
+    keyboard.text(fiat.label, `fiat_select:${fiat.code}`);
+  }
+
+  await ctx.reply(
+    `Welcome to TonAlert, ${name}! 🎉\n\nI help you track Toncoin and TON jetton prices with custom alerts.\n\nPlease select your preferred fiat currency (default: USD):`,
+    { reply_markup: keyboard },
+  );
+});
+
+bot.callbackQuery(/^fiat_select:(.+)$/, async (ctx) => {
+  const fiatCode = ctx.match[1];
+  const fiatOption = FIAT_OPTIONS.find((f) => f.code === fiatCode);
+  if (!fiatOption) {
+    await ctx.answerCallbackQuery({ text: "Unknown fiat currency." });
+    return;
+  }
+  ctx.session.fiat = fiatCode;
+
   const menu = new InlineKeyboard()
     .text("🚀 Set Alert", "menu:set_alert").row()
     .text("📊 My Alerts", "menu:my_alerts").row()
     .text("ℹ️ Help", "menu:help");
 
-  await ctx.reply(
-    `Welcome to TonAlert, ${name}! 🎉\n\nI help you track Toncoin and TON jetton prices with custom alerts. Use the menu below to get started.`,
+  await ctx.editMessageText(
+    `Fiat currency set to ${fiatOption.label}. ✅\n\nUse the menu below to get started.`,
     { reply_markup: menu },
   );
+  await ctx.answerCallbackQuery();
 });
 
 bot.command("help", async (ctx) => {

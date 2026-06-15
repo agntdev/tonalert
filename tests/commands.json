@@ -1,7 +1,7 @@
 [
   {
     "command": "start",
-    "description": "Start the bot and see the welcome message"
+    "description": "Start the bot, see the welcome message, and configure your preferred fiat currency"
   },
   {
     "command": "help",
