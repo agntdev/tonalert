@@ -4,7 +4,16 @@
     "steps": [
       { "send": "/start" },
       { "expect": { "reply": "Welcome to TonAlert, Test User!" } },
-      { "expect": { "reply_markup": { "inline_keyboard": [[{"text":"🚀 Set Alert","callback_data":"menu:set_alert"}],[{"text":"📊 My Alerts","callback_data":"menu:my_alerts"}],[{"text":"ℹ️ Help","callback_data":"menu:help"}]] } } }
+      { "expect": { "reply_markup": { "inline_keyboard": [[{"text":"🇺🇸 USD","callback_data":"onboard:fiat:USD"}],[{"text":"🇪🇺 EUR","callback_data":"onboard:fiat:EUR"}],[{"text":"🇬🇧 GBP","callback_data":"onboard:fiat:GBP"}],[{"text":"🇯🇵 JPY","callback_data":"onboard:fiat:JPY"}]] } } }
+    ]
+  },
+  {
+    "name": "/start fiat selection",
+    "steps": [
+      { "send": "/start" },
+      { "expect": { "reply": "Welcome to TonAlert, Test User!" } },
+      { "send": { "callback_data": "onboard:fiat:USD" } },
+      { "expect": { "reply": "Got it! Your preferred fiat is set to USD." } }
     ]
   }
 ]
