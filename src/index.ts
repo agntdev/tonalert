@@ -1,4 +1,4 @@
-import { Bot, GrammyError, HttpError } from "grammy";
+import { Bot, GrammyError, HttpError, InlineKeyboard } from "grammy";
 
 const BOT_TOKEN = process.env.BOT_TOKEN;
 if (!BOT_TOKEN) {
@@ -8,7 +8,16 @@ if (!BOT_TOKEN) {
 const bot = new Bot(BOT_TOKEN);
 
 bot.command("start", async (ctx) => {
-  await ctx.reply("Welcome to TonAlert! I help you track Toncoin and TON jetton prices with custom alerts.");
+  const name = ctx.from?.first_name ?? "there";
+  const menu = new InlineKeyboard()
+    .text("🚀 Set Alert", "menu:set_alert").row()
+    .text("📊 My Alerts", "menu:my_alerts").row()
+    .text("ℹ️ Help", "menu:help");
+
+  await ctx.reply(
+    `Welcome to TonAlert, ${name}! 🎉\n\nI help you track Toncoin and TON jetton prices with custom alerts. Use the menu below to get started.`,
+    { reply_markup: menu },
+  );
 });
 
 bot.on("message", async (ctx) => {

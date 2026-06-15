@@ -3,7 +3,8 @@
     "name": "/start smoke",
     "steps": [
       { "send": "/start" },
-      { "expect": { "reply": "Welcome to TonAlert!" } }
+      { "expect": { "reply": "Welcome to TonAlert, Test User!" } },
+      { "expect": { "reply_markup": { "inline_keyboard": [[{"text":"🚀 Set Alert","callback_data":"menu:set_alert"}],[{"text":"📊 My Alerts","callback_data":"menu:my_alerts"}],[{"text":"ℹ️ Help","callback_data":"menu:help"}]] } } }
     ]
   }
 ]
