@@ -204,8 +204,43 @@ bot.command("help", async (ctx) => {
     "Available commands:\n" +
     "/start — Start the bot and see the welcome message\n" +
     "/add <symbol|address> — Search for a token to add to your watchlist\n" +
+    "/list — View your watchlist\n" +
     "/help — Show this help message"
   );
+});
+
+bot.command("list", async (ctx) => {
+  const watchlist = ctx.session.watchlist;
+  if (watchlist.length === 0) {
+    await ctx.reply(
+      "Your watchlist is empty. Use /add to search for tokens and create alert rules.",
+    );
+    return;
+  }
+
+  const typeLabels: Record<string, string> = {
+    price_below: "Price below",
+    price_above: "Price above",
+    percent_move: "Move ≥",
+  };
+
+  await ctx.reply("📊 <b>Your Watchlist</b>", { parse_mode: "HTML" });
+
+  for (const rule of watchlist) {
+    const valueLabel = rule.type === "percent_move"
+      ? `${rule.percentThreshold}% in 1h`
+      : `$${(rule.threshold ?? 0).toFixed(2)}`;
+
+    const keyboard = new InlineKeyboard()
+      .text("💵 Price now", `price_now:${rule.token.symbol}`).row()
+      .text("✏️ Edit rule", `edit_rule:${rule.token.symbol}:${rule.type}`).row()
+      .text("🗑 Remove", `remove:${rule.token.symbol}:${rule.type}`);
+
+    await ctx.reply(
+      `• <b>${rule.token.symbol}</b> — ${typeLabels[rule.type]} ${valueLabel}`,
+      { reply_markup: keyboard, parse_mode: "HTML" },
+    );
+  }
 });
 
 bot.command("add", async (ctx) => {
@@ -303,6 +338,48 @@ bot.callbackQuery(/^price_now:(.+)$/, async (ctx) => {
   await ctx.answerCallbackQuery({ text: `Price for ${symbol} will be available soon.` });
 });
 
+bot.callbackQuery(/^edit_rule:(.+):(.+)$/, async (ctx) => {
+  const symbol = ctx.match[1];
+  const ruleType = ctx.match[2];
+  const rule = ctx.session.watchlist.find(
+    (r) => r.token.symbol === symbol && r.type === ruleType,
+  );
+  if (!rule) {
+    await ctx.answerCallbackQuery({ text: "Rule not found." });
+    return;
+  }
+
+  ctx.session.selectedToken = rule.token;
+  ctx.session.pendingRule = { token: rule.token, type: ruleType };
+
+  const prompt = ruleType === "percent_move"
+    ? `Enter the new minimum percentage move for <b>${rule.token.symbol}</b> (e.g., 5 for 5%):`
+    : `Enter the new target price for <b>${rule.token.symbol}</b> (in USD):`;
+
+  await ctx.reply(
+    `${prompt}\n\n(Send /cancel to abort)`,
+    { parse_mode: "HTML" },
+  );
+  await ctx.answerCallbackQuery();
+});
+
+bot.callbackQuery(/^remove:(.+):(.+)$/, async (ctx) => {
+  const symbol = ctx.match[1];
+  const ruleType = ctx.match[2];
+  const chatId = ctx.chat?.id;
+  if (chatId) {
+    const before = ctx.session.watchlist.length;
+    ctx.session.watchlist = ctx.session.watchlist.filter(
+      (r) => !(r.token.symbol === symbol && r.type === ruleType),
+    );
+    if (ctx.session.watchlist.length < before) {
+      await ctx.answerCallbackQuery({ text: `Removed ${symbol} alert rule.` });
+      return;
+    }
+  }
+  await ctx.answerCallbackQuery({ text: "Rule not found." });
+});
+
 bot.callbackQuery(/^snooze:(.+):(.+)$/, async (ctx) => {
   const symbol = ctx.match[1];
   await ctx.answerCallbackQuery({ text: `Snoozed alerts for ${symbol} for 1 hour.` });
@@ -351,6 +428,9 @@ bot.on("message:text", async (ctx, next) => {
     percentThreshold: pending.type === "percent_move" ? result.value : undefined,
   };
 
+  ctx.session.watchlist = ctx.session.watchlist.filter(
+    (r) => !(r.token.symbol === pending.token.symbol && r.type === pending.type),
+  );
   ctx.session.watchlist.push(rule);
   ctx.session.pendingRule = undefined;
 

@@ -10,5 +10,9 @@
   {
     "command": "add",
     "description": "Search for a token by symbol or contract address and add to watchlist"
+  },
+  {
+    "command": "list",
+    "description": "View your watchlist with inline buttons for price check, edit, and remove"
   }
 ]
