@@ -59,7 +59,32 @@
       { "expect": { "reply": "Welcome to TonAlert, Test User!" } },
       { "send_callback": "fiat_select:USD" },
       { "expect": { "reply": "Fiat currency set to USD ($)." } },
+      { "expect": { "reply": "please select your timezone" } },
+      { "expect": { "reply_markup": { "inline_keyboard": [[{"text":"🕐 Auto-detect (UTC)","callback_data":"tz_select:UTC"}]] } } }
+    ]
+  },
+  {
+    "name": "timezone selection: UTC",
+    "steps": [
+      { "send": "/start" },
+      { "expect": { "reply": "Welcome to TonAlert, Test User!" } },
+      { "send_callback": "fiat_select:USD" },
+      { "expect": { "reply": "Fiat currency set to USD ($)." } },
+      { "send_callback": "tz_select:UTC" },
+      { "expect": { "reply": "Timezone set to UTC (London)." } },
       { "expect": { "reply_markup": { "inline_keyboard": [[{"text":"🚀 Set Alert","callback_data":"menu:set_alert"}],[{"text":"📊 My Alerts","callback_data":"menu:my_alerts"}],[{"text":"ℹ️ Help","callback_data":"menu:help"}]] } } }
+    ]
+  },
+  {
+    "name": "timezone selection: UTC+8 (Shanghai)",
+    "steps": [
+      { "send": "/start" },
+      { "expect": { "reply": "Welcome to TonAlert, Test User!" } },
+      { "send_callback": "fiat_select:EUR" },
+      { "expect": { "reply": "Fiat currency set to EUR (€)." } },
+      { "send_callback": "tz_select:UTC+8" },
+      { "expect": { "reply": "Timezone set to UTC+8 (Shanghai)." } },
+      { "expect": { "reply": "Use the menu below to get started." } }
     ]
   }
 ]

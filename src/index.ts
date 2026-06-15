@@ -33,6 +33,7 @@ interface AlertEvent {
 
 interface SessionData {
   fiat: string;
+  timezone: string;
   selectedToken?: TokenInfo;
   pendingRule?: { token: TokenInfo; type: string };
   watchlist: AlertRule[];
@@ -45,7 +46,7 @@ const bot = new Bot<MyContext>(BOT_TOKEN);
 
 bot.use(session({
   initial(): SessionData {
-    return { fiat: "USD", watchlist: [], alertHistory: [] };
+    return { fiat: "USD", timezone: "UTC", watchlist: [], alertHistory: [] };
   },
 }));
 
@@ -95,6 +96,31 @@ const FIAT_OPTIONS = [
   { code: "RUB", label: "RUB (₽)" },
 ];
 
+const TIMEZONE_OPTIONS = [
+  { value: "UTC-12", label: "UTC-12 (Baker Island)" },
+  { value: "UTC-11", label: "UTC-11 (Pago Pago)" },
+  { value: "UTC-10", label: "UTC-10 (Honolulu)" },
+  { value: "UTC-9",  label: "UTC-9 (Anchorage)" },
+  { value: "UTC-8",  label: "UTC-8 (Los Angeles)" },
+  { value: "UTC-7",  label: "UTC-7 (Denver)" },
+  { value: "UTC-6",  label: "UTC-6 (Chicago)" },
+  { value: "UTC-5",  label: "UTC-5 (New York)" },
+  { value: "UTC-4",  label: "UTC-4 (Santiago)" },
+  { value: "UTC-3",  label: "UTC-3 (São Paulo)" },
+  { value: "UTC",    label: "UTC (London)" },
+  { value: "UTC+1",  label: "UTC+1 (Berlin)" },
+  { value: "UTC+2",  label: "UTC+2 (Cairo)" },
+  { value: "UTC+3",  label: "UTC+3 (Moscow)" },
+  { value: "UTC+4",  label: "UTC+4 (Dubai)" },
+  { value: "UTC+5",  label: "UTC+5 (Karachi)" },
+  { value: "UTC+6",  label: "UTC+6 (Dhaka)" },
+  { value: "UTC+7",  label: "UTC+7 (Bangkok)" },
+  { value: "UTC+8",  label: "UTC+8 (Shanghai)" },
+  { value: "UTC+9",  label: "UTC+9 (Tokyo)" },
+  { value: "UTC+10", label: "UTC+10 (Sydney)" },
+  { value: "UTC+12", label: "UTC+12 (Auckland)" },
+];
+
 bot.command("start", async (ctx) => {
   const name = ctx.from?.first_name ?? "there";
   const keyboard = new InlineKeyboard();
@@ -117,13 +143,41 @@ bot.callbackQuery(/^fiat_select:(.+)$/, async (ctx) => {
   }
   ctx.session.fiat = fiatCode;
 
+  const keyboard = new InlineKeyboard()
+    .text("🕐 Auto-detect (UTC)", "tz_select:UTC").row();
+
+  const COL = 2;
+  for (let i = 0; i < TIMEZONE_OPTIONS.length; i += COL) {
+    const row = TIMEZONE_OPTIONS.slice(i, i + COL);
+    for (const tz of row) {
+      keyboard.text(tz.label, `tz_select:${tz.value}`);
+    }
+    keyboard.row();
+  }
+
+  await ctx.editMessageText(
+    `Fiat currency set to ${fiatOption.label}. ✅\n\nNow, please select your timezone:\n(Default: UTC, used for quiet hours & morning summary scheduling)`,
+    { reply_markup: keyboard },
+  );
+  await ctx.answerCallbackQuery();
+});
+
+bot.callbackQuery(/^tz_select:(.+)$/, async (ctx) => {
+  const tzValue = ctx.match[1];
+  const tzOption = TIMEZONE_OPTIONS.find((t) => t.value === tzValue);
+  if (!tzOption) {
+    await ctx.answerCallbackQuery({ text: "Unknown timezone." });
+    return;
+  }
+  ctx.session.timezone = tzValue;
+
   const menu = new InlineKeyboard()
     .text("🚀 Set Alert", "menu:set_alert").row()
     .text("📊 My Alerts", "menu:my_alerts").row()
     .text("ℹ️ Help", "menu:help");
 
   await ctx.editMessageText(
-    `Fiat currency set to ${fiatOption.label}. ✅\n\nUse the menu below to get started.`,
+    `Timezone set to ${tzOption.label}. ✅\n\nUse the menu below to get started.`,
     { reply_markup: menu },
   );
   await ctx.answerCallbackQuery();
