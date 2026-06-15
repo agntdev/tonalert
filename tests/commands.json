@@ -6,5 +6,9 @@
   {
     "command": "help",
     "description": "Show available bot commands"
+  },
+  {
+    "command": "add",
+    "description": "Search for a token by symbol or contract address and add to watchlist"
   }
 ]
