@@ -1,5 +1,6 @@
 import { Bot, Context, GrammyError, HttpError, InlineKeyboard, session, SessionFlavor } from "grammy";
 import { startWorker, AlertRule as WorkerAlertRule, AlertEvent as WorkerAlertEvent } from "./worker";
+import { parseNumber } from "./parse";
 
 const BOT_TOKEN = process.env.BOT_TOKEN;
 if (!BOT_TOKEN) {
@@ -32,6 +33,7 @@ interface AlertEvent {
 
 interface SessionData {
   selectedToken?: TokenInfo;
+  pendingRule?: { token: TokenInfo; type: string };
   watchlist: AlertRule[];
   alertHistory: AlertEvent[];
 }
@@ -183,27 +185,17 @@ bot.callbackQuery(/^rule:(.+)$/, async (ctx) => {
     return;
   }
 
-  const rule: AlertRule = {
-    token,
-    type: ruleType as "price_below" | "price_above" | "percent_move",
-    threshold: ruleType !== "percent_move" ? 0 : undefined,
-    percentThreshold: ruleType === "percent_move" ? 5 : undefined,
-  };
-
-  ctx.session.watchlist.push(rule);
+  ctx.session.pendingRule = { token, type: ruleType };
   ctx.session.selectedToken = undefined;
 
-  const typeLabels: Record<string, string> = {
-    price_below: "price drops below target",
-    price_above: "price rises above target",
-    percent_move: "price moves ≥ target % in 1h",
-  };
+  const prompt = ruleType === "percent_move"
+    ? `Enter the minimum percentage move for <b>${token.symbol}</b> (e.g., 5 for 5%):`
+    : `Enter the target price for <b>${token.symbol}</b> (in USD):`;
 
   await ctx.editMessageText(
-    `✅ Alert rule saved for <b>${token.symbol}</b>: ${typeLabels[ruleType]}\n\nUse /list to view your watchlist.`,
+    `${prompt}\n\n(Send /cancel to abort)`,
     { parse_mode: "HTML" },
   );
-
   await ctx.answerCallbackQuery();
 });
 
@@ -227,6 +219,56 @@ bot.callbackQuery(/^disable:(.+):(.+)$/, async (ctx) => {
     );
   }
   await ctx.answerCallbackQuery({ text: `Alert rule for ${symbol} disabled.` });
+});
+
+bot.on("message:text", async (ctx, next) => {
+  const pending = ctx.session.pendingRule;
+  if (!pending) {
+    await next();
+    return;
+  }
+
+  const text = ctx.message.text.trim();
+
+  if (text === "/cancel") {
+    ctx.session.pendingRule = undefined;
+    await ctx.reply("Alert configuration cancelled. Use /add to create a new alert.");
+    return;
+  }
+
+  const parseContext = pending.type === "percent_move" ? "percent" as const : "price" as const;
+  const result = parseNumber(text, parseContext);
+
+  if ("error" in result) {
+    const prefix = result.clarification ? "🤔" : "❌";
+    await ctx.reply(`${prefix} ${result.error}\n\nPlease try again. (Send /cancel to abort)`);
+    return;
+  }
+
+  const rule: AlertRule = {
+    token: pending.token,
+    type: pending.type as "price_below" | "price_above" | "percent_move",
+    threshold: pending.type !== "percent_move" ? result.value : undefined,
+    percentThreshold: pending.type === "percent_move" ? result.value : undefined,
+  };
+
+  ctx.session.watchlist.push(rule);
+  ctx.session.pendingRule = undefined;
+
+  const typeLabels: Record<string, string> = {
+    price_below: "price drops below",
+    price_above: "price rises above",
+    percent_move: "price moves ≥",
+  };
+
+  const valueLabel = pending.type === "percent_move"
+    ? `${result.value}% in 1h`
+    : `$${result.value.toFixed(4)}`;
+
+  await ctx.reply(
+    `✅ Alert rule saved for <b>${pending.token.symbol}</b>: ${typeLabels[pending.type]} ${valueLabel}\n\nUse /list to view your watchlist.`,
+    { parse_mode: "HTML" },
+  );
 });
 
 bot.on("message", async (ctx) => {
