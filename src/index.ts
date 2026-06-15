@@ -34,6 +34,7 @@ interface AlertEvent {
 interface SessionData {
   fiat: string;
   timezone: string;
+  morningSummary: boolean;
   selectedToken?: TokenInfo;
   pendingRule?: { token: TokenInfo; type: string };
   watchlist: AlertRule[];
@@ -46,7 +47,7 @@ const bot = new Bot<MyContext>(BOT_TOKEN);
 
 bot.use(session({
   initial(): SessionData {
-    return { fiat: "USD", timezone: "UTC", watchlist: [], alertHistory: [] };
+    return { fiat: "USD", timezone: "UTC", morningSummary: true, watchlist: [], alertHistory: [] };
   },
 }));
 
@@ -171,13 +172,28 @@ bot.callbackQuery(/^tz_select:(.+)$/, async (ctx) => {
   }
   ctx.session.timezone = tzValue;
 
+  const keyboard = new InlineKeyboard()
+    .text("✅ Yes", "morning_summary:yes").row()
+    .text("❌ No", "morning_summary:no");
+
+  await ctx.editMessageText(
+    `Timezone set to ${tzOption.label}. ✅\n\nWould you like to receive a daily morning summary of your tracked tokens? (default: Yes)`,
+    { reply_markup: keyboard },
+  );
+  await ctx.answerCallbackQuery();
+});
+
+bot.callbackQuery(/^morning_summary:(yes|no)$/, async (ctx) => {
+  const enabled = ctx.match[1] === "yes";
+  ctx.session.morningSummary = enabled;
+
   const menu = new InlineKeyboard()
     .text("🚀 Set Alert", "menu:set_alert").row()
     .text("📊 My Alerts", "menu:my_alerts").row()
     .text("ℹ️ Help", "menu:help");
 
   await ctx.editMessageText(
-    `Timezone set to ${tzOption.label}. ✅\n\nUse the menu below to get started.`,
+    `Morning summary ${enabled ? "enabled" : "disabled"}. ✅\n\nUse the menu below to get started.`,
     { reply_markup: menu },
   );
   await ctx.answerCallbackQuery();
