@@ -4,7 +4,7 @@
     "steps": [
       { "send": "/start" },
       { "expect": { "reply": "Welcome to TonAlert, Test User!" } },
-      { "expect": { "reply_markup": { "inline_keyboard": [[{"text":"🚀 Set Alert","callback_data":"menu:set_alert"}],[{"text":"📊 My Alerts","callback_data":"menu:my_alerts"}],[{"text":"ℹ️ Help","callback_data":"menu:help"}]] } } }
+      { "expect": { "reply_markup": { "inline_keyboard": [[{"text":"🚀 Set Alert","callback_data":"menu:set_alert"}],[{"text":"📊 My Alerts","callback_data":"menu:my_alerts"}],[{"text":"💰 Price Now","callback_data":"menu:price"}],[{"text":"ℹ️ Help","callback_data":"menu:help"}]] } } }
     ]
   },
   {
@@ -41,7 +41,7 @@
       { "send": "/add TON" },
       { "expect": { "reply": "Search results for" } },
       { "expect": { "reply": "TON" } },
-      { "expect": { "reply_markup": { "inline_keyboard": [[{"text":"➕ Add TON","callback_data":"add:TON"}]] } } }
+      { "expect": { "reply_markup": { "inline_keyboard": [[{"text":"➕ Add TON","callback_data":"add:TON"},{"text":"💲 Price","callback_data":"price:TON"}]] } } }
     ]
   },
   {
@@ -49,6 +49,50 @@
     "steps": [
       { "send": "/add XYZUNKNOWN" },
       { "expect": { "reply": "No tokens found matching" } }
+    ]
+  },
+  {
+    "name": "/price without argument",
+    "steps": [
+      { "send": "/price" },
+      { "expect": { "reply": "Select a token to check its price:" } },
+      { "expect": { "reply_markup": { "inline_keyboard": [[{"text":"💲 TON","callback_data":"price:TON"}],[{"text":"💲 USDT","callback_data":"price:USDT"}],[{"text":"💲 GRAM","callback_data":"price:GRAM"}],[{"text":"💲 NOT","callback_data":"price:NOT"}],[{"text":"💲 DOGS","callback_data":"price:DOGS"}],[{"text":"💲 STON","callback_data":"price:STON"}]] } } }
+    ]
+  },
+  {
+    "name": "/price with valid symbol (TON)",
+    "steps": [
+      { "send": "/price TON" },
+      { "expect": { "reply": "TON" } },
+      { "expect": { "reply": "Price" } },
+      { "expect": { "reply": "1h:" } },
+      { "expect": { "reply": "24h:" } },
+      { "expect": { "reply": "Last update:" } }
+    ]
+  },
+  {
+    "name": "/price with unknown symbol",
+    "steps": [
+      { "send": "/price XYZUNKNOWN" },
+      { "expect": { "reply": "not found" } }
+    ]
+  },
+  {
+    "name": "Price now inline callback (menu:price)",
+    "steps": [
+      { "callback": "menu:price" },
+      { "expect": { "reply": "Select a token to check its price:" } }
+    ]
+  },
+  {
+    "name": "Price callback for TON",
+    "steps": [
+      { "callback": "price:TON" },
+      { "expect": { "reply": "TON" } },
+      { "expect": { "reply": "Price" } },
+      { "expect": { "reply": "1h:" } },
+      { "expect": { "reply": "24h:" } },
+      { "expect": { "reply": "Last update:" } }
     ]
   }
 ]
