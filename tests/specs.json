@@ -86,5 +86,69 @@
       { "expect": { "reply": "Timezone set to UTC+8 (Shanghai)." } },
       { "expect": { "reply": "Use the menu below to get started." } }
     ]
+  },
+  {
+    "name": "/list empty watchlist",
+    "steps": [
+      { "send": "/list" },
+      { "expect": { "reply": "Your watchlist is empty." } }
+    ]
+  },
+  {
+    "name": "/list with a rule in watchlist",
+    "steps": [
+      { "send": "/add TON" },
+      { "expect": { "reply": "Search results for" } },
+      { "send_callback": "add:TON" },
+      { "expect": { "reply": "Configure alert for" } },
+      { "send_callback": "rule:price_below" },
+      { "expect": { "reply": "Enter the target price for" } },
+      { "send": "2.00" },
+      { "expect": { "reply": "Alert rule saved for" } },
+      { "send": "/list" },
+      { "expect": { "reply": "Your Watchlist" } },
+      { "expect": { "reply": "TON" } },
+      { "expect": { "reply_markup": { "inline_keyboard": [[{"text":"💵 Price now","callback_data":"price_now:TON"}],[{"text":"✏️ Edit rule","callback_data":"edit_rule:TON:price_below"}],[{"text":"🗑 Remove","callback_data":"remove:TON:price_below"}]] } } }
+    ]
+  },
+  {
+    "name": "remove rule via /list",
+    "steps": [
+      { "send": "/add TON" },
+      { "expect": { "reply": "Search results for" } },
+      { "send_callback": "add:TON" },
+      { "expect": { "reply": "Configure alert for" } },
+      { "send_callback": "rule:price_below" },
+      { "expect": { "reply": "Enter the target price for" } },
+      { "send": "2.00" },
+      { "expect": { "reply": "Alert rule saved for" } },
+      { "send": "/list" },
+      { "expect": { "reply": "Your Watchlist" } },
+      { "send_callback": "remove:TON:price_below" },
+      { "send": "/list" },
+      { "expect": { "reply": "Your watchlist is empty." } }
+    ]
+  },
+  {
+    "name": "edit rule via /list",
+    "steps": [
+      { "send": "/add TON" },
+      { "expect": { "reply": "Search results for" } },
+      { "send_callback": "add:TON" },
+      { "expect": { "reply": "Configure alert for" } },
+      { "send_callback": "rule:price_below" },
+      { "expect": { "reply": "Enter the target price for" } },
+      { "send": "2.00" },
+      { "expect": { "reply": "Alert rule saved for" } },
+      { "send": "/list" },
+      { "expect": { "reply": "Your Watchlist" } },
+      { "send_callback": "edit_rule:TON:price_below" },
+      { "expect": { "reply": "Enter the new target price for" } },
+      { "send": "3.00" },
+      { "expect": { "reply": "Alert rule saved for" } },
+      { "send": "/list" },
+      { "expect": { "reply": "Your Watchlist" } },
+      { "expect": { "reply": "$3.00" } }
+    ]
   }
 ]
