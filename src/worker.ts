@@ -30,6 +30,20 @@ export interface AlertEvent {
   delivered: boolean;
 }
 
+const COOLDOWN_MS = 3_600_000;
+const RESET_MARGIN = 0.01;
+
+interface CooldownEntry {
+  lastTriggered: number;
+  triggerPrice: number;
+}
+
+const cooldowns = new Map<string, CooldownEntry>();
+
+function getCooldownKey(chatId: number, tokenSymbol: string, ruleType: string): string {
+  return `${chatId}:${tokenSymbol}:${ruleType}`;
+}
+
 const priceCache = new Map<string, { price: number; previousPrice: number; timestamp: number }>();
 
 function basePrice(token: TokenInfo): number {
@@ -121,6 +135,54 @@ function evaluateRule(rule: AlertRule, currentPrice: number): {
   }
 }
 
+function shouldSuppressRule(
+  key: string,
+  rule: AlertRule,
+  currentPrice: number,
+  percentChange: number,
+): boolean {
+  const entry = cooldowns.get(key);
+  if (!entry) return false;
+
+  const now = Date.now();
+  if (now - entry.lastTriggered > COOLDOWN_MS) {
+    cooldowns.delete(key);
+    return false;
+  }
+
+  switch (rule.type) {
+    case "price_below": {
+      const threshold = rule.threshold ?? basePrice(rule.token) * 0.95;
+      const resetPrice = threshold * (1 - RESET_MARGIN);
+      if (currentPrice <= resetPrice) {
+        cooldowns.delete(key);
+        return false;
+      }
+      break;
+    }
+    case "price_above": {
+      const threshold = rule.threshold ?? basePrice(rule.token) * 1.05;
+      const resetPrice = threshold * (1 + RESET_MARGIN);
+      if (currentPrice >= resetPrice) {
+        cooldowns.delete(key);
+        return false;
+      }
+      break;
+    }
+    case "percent_move": {
+      const pctThreshold = rule.percentThreshold ?? 5;
+      const resetThreshold = pctThreshold + RESET_MARGIN * 100;
+      if (Math.abs(percentChange) >= resetThreshold) {
+        cooldowns.delete(key);
+        return false;
+      }
+      break;
+    }
+  }
+
+  return true;
+}
+
 interface UserRules {
   chatId: number;
   rules: AlertRule[];
@@ -154,6 +216,9 @@ export function startWorker(
         const result = evaluateRule(rule, currentPrice);
         if (!result) continue;
 
+        const cooldownKey = getCooldownKey(user.chatId, rule.token.symbol, rule.type);
+        if (shouldSuppressRule(cooldownKey, rule, currentPrice, result.percentChange)) continue;
+
         const previousPrice = getPreviousPrice(rule.token);
         const percentLabel = result.percentChange >= 0
           ? `+${result.percentChange.toFixed(1)}%`
@@ -184,6 +249,8 @@ export function startWorker(
         } catch {
           console.error(`Failed to send alert to chat ${user.chatId}`);
         }
+
+        cooldowns.set(cooldownKey, { lastTriggered: Date.now(), triggerPrice: currentPrice });
 
         const alertEvent: AlertEvent = {
           timestamp: Date.now(),
