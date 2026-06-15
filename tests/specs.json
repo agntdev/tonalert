@@ -15,6 +15,13 @@
     ]
   },
   {
+    "name": "/list empty watchlist",
+    "steps": [
+      { "send": "/list" },
+      { "expect": { "reply": "Your watchlist is empty." } }
+    ]
+  },
+  {
     "name": "unknown message fallback",
     "steps": [
       { "send": "hello bot" },

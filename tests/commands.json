@@ -6,5 +6,9 @@
   {
     "command": "help",
     "description": "Show available bot commands"
+  },
+  {
+    "command": "list",
+    "description": "View your watchlist"
   }
 ]
