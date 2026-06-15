@@ -1,17 +1,35 @@
-import { Bot, GrammyError, HttpError, InlineKeyboard } from "grammy";
+import { Bot, Context, GrammyError, HttpError, InlineKeyboard, session, SessionFlavor } from "grammy";
 
 const BOT_TOKEN = process.env.BOT_TOKEN;
 if (!BOT_TOKEN) {
   throw new Error("BOT_TOKEN environment variable is required");
 }
 
-const bot = new Bot(BOT_TOKEN);
-
 interface TokenInfo {
   symbol: string;
   name: string;
   address: string;
 }
+
+interface AlertRule {
+  token: TokenInfo;
+  type: "price_below" | "price_above" | "percent_move";
+}
+
+interface SessionData {
+  selectedToken?: TokenInfo;
+  watchlist: AlertRule[];
+}
+
+type MyContext = Context & SessionFlavor<SessionData>;
+
+const bot = new Bot<MyContext>(BOT_TOKEN);
+
+bot.use(session({
+  initial(): SessionData {
+    return { watchlist: [] };
+  },
+}));
 
 const MOCK_TOKENS: TokenInfo[] = [
   { symbol: "TON",  name: "Toncoin",          address: "native" },
@@ -86,6 +104,71 @@ bot.command("add", async (ctx) => {
     `Search results for <b>"${query}"</b>:\n\n${list}`,
     { reply_markup: keyboard, parse_mode: "HTML" },
   );
+});
+
+bot.callbackQuery(/^add:(.+)$/, async (ctx) => {
+  const symbol = ctx.match[1];
+  const token = MOCK_TOKENS.find((t) => t.symbol === symbol);
+  if (!token) {
+    await ctx.answerCallbackQuery({ text: "Token not found." });
+    return;
+  }
+
+  ctx.session.selectedToken = token;
+
+  const keyboard = new InlineKeyboard()
+    .text("📉 Price below", "rule:price_below").row()
+    .text("📈 Price above", "rule:price_above").row()
+    .text("📊 Move ≥ % in 1h", "rule:percent_move").row()
+    .text("⏭️ Skip", "rule:skip");
+
+  await ctx.editMessageText(
+    `Configure alert for <b>${token.symbol}</b> — ${token.name}\n\nChoose an alert rule type:`,
+    { reply_markup: keyboard, parse_mode: "HTML" },
+  );
+
+  await ctx.answerCallbackQuery();
+});
+
+bot.callbackQuery(/^rule:(.+)$/, async (ctx) => {
+  const ruleType = ctx.match[1];
+  const token = ctx.session.selectedToken;
+
+  if (!token) {
+    await ctx.answerCallbackQuery({ text: "Please select a token first. Use /add to search." });
+    return;
+  }
+
+  if (ruleType === "skip") {
+    ctx.session.selectedToken = undefined;
+    await ctx.editMessageText(
+      `No alert configured for <b>${token.symbol}</b>.\n\nUse /add to configure an alert later.`,
+      { parse_mode: "HTML" },
+    );
+    await ctx.answerCallbackQuery();
+    return;
+  }
+
+  const rule: AlertRule = {
+    token,
+    type: ruleType as "price_below" | "price_above" | "percent_move",
+  };
+
+  ctx.session.watchlist.push(rule);
+  ctx.session.selectedToken = undefined;
+
+  const typeLabels: Record<string, string> = {
+    price_below: "price drops below target",
+    price_above: "price rises above target",
+    percent_move: "price moves ≥ target % in 1h",
+  };
+
+  await ctx.editMessageText(
+    `✅ Alert rule saved for <b>${token.symbol}</b>: ${typeLabels[ruleType]}\n\nUse /list to view your watchlist.`,
+    { parse_mode: "HTML" },
+  );
+
+  await ctx.answerCallbackQuery();
 });
 
 bot.on("message", async (ctx) => {
