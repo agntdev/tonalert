@@ -1,4 +1,5 @@
 import { Bot, Context, GrammyError, HttpError, InlineKeyboard, session, SessionFlavor } from "grammy";
+import { startWorker, AlertRule as WorkerAlertRule, AlertEvent as WorkerAlertEvent } from "./worker";
 
 const BOT_TOKEN = process.env.BOT_TOKEN;
 if (!BOT_TOKEN) {
@@ -14,11 +15,25 @@ interface TokenInfo {
 interface AlertRule {
   token: TokenInfo;
   type: "price_below" | "price_above" | "percent_move";
+  threshold?: number;
+  percentThreshold?: number;
+}
+
+interface AlertEvent {
+  timestamp: number;
+  token: TokenInfo;
+  ruleType: string;
+  triggerDescription: string;
+  currentPrice: number;
+  baselinePrice?: number;
+  percentChange?: number;
+  delivered: boolean;
 }
 
 interface SessionData {
   selectedToken?: TokenInfo;
   watchlist: AlertRule[];
+  alertHistory: AlertEvent[];
 }
 
 type MyContext = Context & SessionFlavor<SessionData>;
@@ -27,9 +42,28 @@ const bot = new Bot<MyContext>(BOT_TOKEN);
 
 bot.use(session({
   initial(): SessionData {
-    return { watchlist: [] };
+    return { watchlist: [], alertHistory: [] };
   },
 }));
+
+const userSessions = new Map<number, SessionData>();
+
+bot.use(async (ctx, next) => {
+  const chatId = ctx.chat?.id;
+  if (chatId) {
+    userSessions.set(chatId, ctx.session);
+  }
+  await next();
+});
+
+function buildWatchlistRulesFromSession(session: SessionData): WorkerAlertRule[] {
+  return session.watchlist.map((r) => ({
+    token: r.token,
+    type: r.type,
+    threshold: r.threshold,
+    percentThreshold: r.percentThreshold,
+  }));
+}
 
 const MOCK_TOKENS: TokenInfo[] = [
   { symbol: "TON",  name: "Toncoin",          address: "native" },
@@ -152,6 +186,8 @@ bot.callbackQuery(/^rule:(.+)$/, async (ctx) => {
   const rule: AlertRule = {
     token,
     type: ruleType as "price_below" | "price_above" | "percent_move",
+    threshold: ruleType !== "percent_move" ? 0 : undefined,
+    percentThreshold: ruleType === "percent_move" ? 5 : undefined,
   };
 
   ctx.session.watchlist.push(rule);
@@ -169,6 +205,28 @@ bot.callbackQuery(/^rule:(.+)$/, async (ctx) => {
   );
 
   await ctx.answerCallbackQuery();
+});
+
+bot.callbackQuery(/^price_now:(.+)$/, async (ctx) => {
+  const symbol = ctx.match[1];
+  await ctx.answerCallbackQuery({ text: `Price for ${symbol} will be available soon.` });
+});
+
+bot.callbackQuery(/^snooze:(.+):(.+)$/, async (ctx) => {
+  const symbol = ctx.match[1];
+  await ctx.answerCallbackQuery({ text: `Snoozed alerts for ${symbol} for 1 hour.` });
+});
+
+bot.callbackQuery(/^disable:(.+):(.+)$/, async (ctx) => {
+  const symbol = ctx.match[1];
+  const ruleType = ctx.match[2];
+  const chatId = ctx.chat?.id;
+  if (chatId) {
+    ctx.session.watchlist = ctx.session.watchlist.filter(
+      (r) => !(r.token.symbol === symbol && r.type === ruleType),
+    );
+  }
+  await ctx.answerCallbackQuery({ text: `Alert rule for ${symbol} disabled.` });
 });
 
 bot.on("message", async (ctx) => {
@@ -192,5 +250,36 @@ bot.catch((err) => {
 bot.start({
   onStart: () => {
     console.log("Bot is running...");
+
+    startWorker(
+      bot,
+      () => {
+        const result: { chatId: number; rules: WorkerAlertRule[] }[] = [];
+        for (const [chatId, session] of userSessions) {
+          const rules = buildWatchlistRulesFromSession(session);
+          if (rules.length > 0) {
+            result.push({ chatId, rules });
+          }
+        }
+        return result;
+      },
+      {
+        addEvent(chatId: number, event: WorkerAlertEvent) {
+          const session = userSessions.get(chatId);
+          if (session) {
+            session.alertHistory.push({
+              timestamp: event.timestamp,
+              token: event.token,
+              ruleType: event.ruleType,
+              triggerDescription: event.triggerDescription,
+              currentPrice: event.currentPrice,
+              baselinePrice: event.baselinePrice,
+              percentChange: event.percentChange,
+              delivered: event.delivered,
+            });
+          }
+        },
+      },
+    );
   },
 });
