@@ -11,8 +11,16 @@ bot.command("start", async (ctx) => {
   await ctx.reply("Welcome to TonAlert! I help you track Toncoin and TON jetton prices with custom alerts.");
 });
 
+bot.command("help", async (ctx) => {
+  await ctx.reply(
+    "Available commands:\n" +
+    "/start — Start the bot and see the welcome message\n" +
+    "/help — Show this help message"
+  );
+});
+
 bot.on("message", async (ctx) => {
-  await ctx.reply("I didn't understand that. Type /start to begin.");
+  await ctx.reply("I didn't understand that. Type /help to see available commands.");
 });
 
 bot.catch((err) => {
@@ -26,6 +34,7 @@ bot.catch((err) => {
   } else {
     console.error("Unknown error:", e);
   }
+  ctx.reply("Something went wrong. Please try again later.").catch(() => {});
 });
 
 bot.start({

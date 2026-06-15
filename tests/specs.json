@@ -5,5 +5,26 @@
       { "send": "/start" },
       { "expect": { "reply": "Welcome to TonAlert!" } }
     ]
+  },
+  {
+    "name": "/help command",
+    "steps": [
+      { "send": "/help" },
+      { "expect": { "reply": "Available commands:" } }
+    ]
+  },
+  {
+    "name": "unknown message fallback",
+    "steps": [
+      { "send": "hello bot" },
+      { "expect": { "reply": "Type /help to see available commands." } }
+    ]
+  },
+  {
+    "name": "unknown command fallback",
+    "steps": [
+      { "send": "/foobar" },
+      { "expect": { "reply": "Type /help to see available commands." } }
+    ]
   }
 ]
