@@ -6,5 +6,26 @@
       { "expect": { "reply": "Welcome to TonAlert, Test User!" } },
       { "expect": { "reply_markup": { "inline_keyboard": [[{"text":"🚀 Set Alert","callback_data":"menu:set_alert"}],[{"text":"📊 My Alerts","callback_data":"menu:my_alerts"}],[{"text":"ℹ️ Help","callback_data":"menu:help"}]] } } }
     ]
+  },
+  {
+    "name": "/help command",
+    "steps": [
+      { "send": "/help" },
+      { "expect": { "reply": "Available commands:" } }
+    ]
+  },
+  {
+    "name": "unknown message fallback",
+    "steps": [
+      { "send": "hello bot" },
+      { "expect": { "reply": "Type /help to see available commands." } }
+    ]
+  },
+  {
+    "name": "unknown command fallback",
+    "steps": [
+      { "send": "/foobar" },
+      { "expect": { "reply": "Type /help to see available commands." } }
+    ]
   }
 ]
