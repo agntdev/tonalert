@@ -61,5 +61,30 @@
       { "expect": { "reply": "Fiat currency set to USD ($)." } },
       { "expect": { "reply_markup": { "inline_keyboard": [[{"text":"🚀 Set Alert","callback_data":"menu:set_alert"}],[{"text":"📊 My Alerts","callback_data":"menu:my_alerts"}],[{"text":"ℹ️ Help","callback_data":"menu:help"}]] } } }
     ]
+  },
+  {
+    "name": "/price without symbol",
+    "steps": [
+      { "send": "/price" },
+      { "expect": { "reply": "Please provide a token symbol to get the price for." } }
+    ]
+  },
+  {
+    "name": "/price with valid symbol (TON)",
+    "steps": [
+      { "send": "/price TON" },
+      { "expect": { "reply": "TON" } },
+      { "expect": { "reply": "Price:" } },
+      { "expect": { "reply": "1h change:" } },
+      { "expect": { "reply": "24h change:" } },
+      { "expect": { "reply": "Last updated:" } }
+    ]
+  },
+  {
+    "name": "/price with unknown symbol",
+    "steps": [
+      { "send": "/price XYZUNKNOWN" },
+      { "expect": { "reply": "not found" } }
+    ]
   }
 ]

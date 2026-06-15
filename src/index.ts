@@ -1,5 +1,5 @@
 import { Bot, Context, GrammyError, HttpError, InlineKeyboard, session, SessionFlavor } from "grammy";
-import { startWorker, AlertRule as WorkerAlertRule, AlertEvent as WorkerAlertEvent } from "./worker";
+import { startWorker, AlertRule as WorkerAlertRule, AlertEvent as WorkerAlertEvent, fetchMockPrice, getPreviousPrice } from "./worker";
 import { parseNumber } from "./parse";
 
 const BOT_TOKEN = process.env.BOT_TOKEN;
@@ -88,6 +88,30 @@ function searchTokens(query: string): TokenInfo[] {
   ).slice(0, 3);
 }
 
+function formatPriceInfo(token: TokenInfo): string {
+  const price = fetchMockPrice(token);
+  const prevPrice = getPreviousPrice(token);
+  const change1h = prevPrice !== 0 ? ((price - prevPrice) / prevPrice) * 100 : 0;
+
+  const seed = token.symbol.split("").reduce((a, c) => a + c.charCodeAt(0), 0);
+  const hourSlot = Math.floor(Date.now() / 3600000);
+  const change24h = ((seed * hourSlot * 7 + 13) % 2000 - 1000) / 100;
+
+  const ts = new Date().toISOString().replace("T", " ").slice(0, 19) + " UTC";
+
+  const sign1h = change1h >= 0 ? "+" : "";
+  const sign24h = change24h >= 0 ? "+" : "";
+
+  return (
+    `<b>${token.symbol}</b> — ${token.name}\n` +
+    `Address: <code>${token.address}</code>\n\n` +
+    `💰 Price: <b>$${price.toFixed(6)}</b>\n` +
+    `📈 1h change: ${sign1h}${change1h.toFixed(2)}%\n` +
+    `📊 24h change: ${sign24h}${change24h.toFixed(2)}%\n` +
+    `🕐 Last updated: ${ts}`
+  );
+}
+
 const FIAT_OPTIONS = [
   { code: "USD", label: "USD ($)" },
   { code: "EUR", label: "EUR (€)" },
@@ -134,6 +158,7 @@ bot.command("help", async (ctx) => {
     "Available commands:\n" +
     "/start — Start the bot and see the welcome message\n" +
     "/add <symbol|address> — Search for a token to add to your watchlist\n" +
+    "/price <symbol> — Get the current price for a token\n" +
     "/help — Show this help message"
   );
 });
@@ -169,6 +194,26 @@ bot.command("add", async (ctx) => {
     `Search results for <b>"${query}"</b>:\n\n${list}`,
     { reply_markup: keyboard, parse_mode: "HTML" },
   );
+});
+
+bot.command("price", async (ctx) => {
+  const query = ctx.match.trim();
+  if (!query) {
+    await ctx.reply(
+      "Please provide a token symbol to get the price for.\n\nExample: /price TON",
+    );
+    return;
+  }
+
+  const token = MOCK_TOKENS.find(
+    (t) => t.symbol.toLowerCase() === query.toLowerCase(),
+  );
+  if (!token) {
+    await ctx.reply(`Token "${query}" not found. Try /add to search for tokens.`);
+    return;
+  }
+
+  await ctx.reply(formatPriceInfo(token), { parse_mode: "HTML" });
 });
 
 bot.callbackQuery(/^add:(.+)$/, async (ctx) => {
@@ -230,7 +275,13 @@ bot.callbackQuery(/^rule:(.+)$/, async (ctx) => {
 
 bot.callbackQuery(/^price_now:(.+)$/, async (ctx) => {
   const symbol = ctx.match[1];
-  await ctx.answerCallbackQuery({ text: `Price for ${symbol} will be available soon.` });
+  const token = MOCK_TOKENS.find((t) => t.symbol === symbol);
+  if (!token) {
+    await ctx.answerCallbackQuery({ text: "Token not found." });
+    return;
+  }
+  await ctx.editMessageText(formatPriceInfo(token), { parse_mode: "HTML" });
+  await ctx.answerCallbackQuery();
 });
 
 bot.callbackQuery(/^snooze:(.+):(.+)$/, async (ctx) => {

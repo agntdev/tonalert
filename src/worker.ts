@@ -58,7 +58,7 @@ function basePrice(token: TokenInfo): number {
   }
 }
 
-function fetchMockPrice(token: TokenInfo): number {
+export function fetchMockPrice(token: TokenInfo): number {
   const key = token.symbol;
   const cached = priceCache.get(key);
   const now = Date.now();
@@ -78,7 +78,7 @@ function fetchMockPrice(token: TokenInfo): number {
   return newPrice;
 }
 
-function getPreviousPrice(token: TokenInfo): number {
+export function getPreviousPrice(token: TokenInfo): number {
   const cached = priceCache.get(token.symbol);
   return cached?.previousPrice ?? basePrice(token);
 }
