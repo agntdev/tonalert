@@ -105,8 +105,46 @@ bot.command("help", async (ctx) => {
     "Available commands:\n" +
     "/start — Start the bot and see the welcome message\n" +
     "/add <symbol|address> — Search for a token to add to your watchlist\n" +
+    "/list — View your watchlist and manage alert rules\n" +
     "/help — Show this help message"
   );
+});
+
+bot.command("list", async (ctx) => {
+  const watchlist = ctx.session.watchlist;
+  if (watchlist.length === 0) {
+    await ctx.reply(
+      "Your watchlist is empty. Use /add to search for tokens and configure alert rules.",
+    );
+    return;
+  }
+
+  const typeLabels: Record<string, string> = {
+    price_below: "Price below",
+    price_above: "Price above",
+    percent_move: "Move ≥",
+  };
+
+  const lines = watchlist.map((rule, i) => {
+    let detail: string;
+    if (rule.type === "percent_move") {
+      detail = `${typeLabels[rule.type]} ${rule.percentThreshold ?? 5}% in 1h`;
+    } else {
+      const threshold = rule.threshold ?? (rule.type === "price_below" ? 1 : 100);
+      detail = `${typeLabels[rule.type]} $${threshold.toFixed(4)}`;
+    }
+    return `${i + 1}. <b>${rule.token.symbol}</b> — ${detail}`;
+  });
+
+  for (let i = 0; i < watchlist.length; i++) {
+    const rule = watchlist[i];
+    const keyboard = new InlineKeyboard()
+      .text("💰 Price now", `price_now:${rule.token.symbol}`).row()
+      .text("✏️ Edit rule", `edit:${rule.token.symbol}:${rule.type}`).row()
+      .text("🗑 Remove", `remove:${rule.token.symbol}:${rule.type}`);
+
+    await ctx.reply(lines[i], { reply_markup: keyboard, parse_mode: "HTML" });
+  }
 });
 
 bot.command("add", async (ctx) => {
@@ -219,6 +257,75 @@ bot.callbackQuery(/^disable:(.+):(.+)$/, async (ctx) => {
     );
   }
   await ctx.answerCallbackQuery({ text: `Alert rule for ${symbol} disabled.` });
+});
+
+bot.callbackQuery(/^remove:(.+):(.+)$/, async (ctx) => {
+  const symbol = ctx.match[1];
+  const ruleType = ctx.match[2];
+  const chatId = ctx.chat?.id;
+  if (chatId) {
+    ctx.session.watchlist = ctx.session.watchlist.filter(
+      (r) => !(r.token.symbol === symbol && r.type === ruleType),
+    );
+  }
+  await ctx.answerCallbackQuery({ text: `Removed alert rule for ${symbol}.` });
+  try {
+    const remaining = ctx.session.watchlist.length;
+    if (remaining === 0) {
+      await ctx.editMessageText("Your watchlist is now empty. Use /add to configure new alerts.");
+    } else {
+      const typeLabels: Record<string, string> = {
+        price_below: "Price below",
+        price_above: "Price above",
+        percent_move: "Move ≥",
+      };
+      const lines = ctx.session.watchlist.map((rule, i) => {
+        let detail: string;
+        if (rule.type === "percent_move") {
+          detail = `${typeLabels[rule.type]} ${rule.percentThreshold ?? 5}% in 1h`;
+        } else {
+          const threshold = rule.threshold ?? (rule.type === "price_below" ? 1 : 100);
+          detail = `${typeLabels[rule.type]} $${threshold.toFixed(4)}`;
+        }
+        return `${i + 1}. <b>${rule.token.symbol}</b> — ${detail}`;
+      });
+      await ctx.editMessageText(
+        lines.join("\n"),
+        { parse_mode: "HTML" },
+      );
+    }
+  } catch {
+    // message may not be editable
+  }
+});
+
+bot.callbackQuery(/^edit:(.+):(.+)$/, async (ctx) => {
+  const symbol = ctx.match[1];
+  const ruleType = ctx.match[2];
+  const token = MOCK_TOKENS.find((t) => t.symbol === symbol);
+  if (!token) {
+    await ctx.answerCallbackQuery({ text: "Token not found." });
+    return;
+  }
+
+  const chatId = ctx.chat?.id;
+  if (chatId) {
+    ctx.session.watchlist = ctx.session.watchlist.filter(
+      (r) => !(r.token.symbol === symbol && r.type === ruleType),
+    );
+  }
+
+  ctx.session.pendingRule = { token, type: ruleType };
+
+  const prompt = ruleType === "percent_move"
+    ? `Enter the new percentage threshold for <b>${token.symbol}</b> (e.g., 5 for 5%):`
+    : `Enter the new target price for <b>${token.symbol}</b> (in USD):`;
+
+  await ctx.editMessageText(
+    `${prompt}\n\n(Send /cancel to abort)`,
+    { parse_mode: "HTML" },
+  );
+  await ctx.answerCallbackQuery();
 });
 
 bot.on("message:text", async (ctx, next) => {

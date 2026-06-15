@@ -50,5 +50,26 @@
       { "send": "/add XYZUNKNOWN" },
       { "expect": { "reply": "No tokens found matching" } }
     ]
+  },
+  {
+    "name": "/list with empty watchlist",
+    "steps": [
+      { "send": "/list" },
+      { "expect": { "reply": "Your watchlist is empty." } }
+    ]
+  },
+  {
+    "name": "/list shows configured alerts",
+    "steps": [
+      { "send": "/add TON" },
+      { "expect": { "reply_markup": { "inline_keyboard": [[{"text":"➕ Add TON","callback_data":"add:TON"}]] } } },
+      { "send": { "callback_data": "add:TON" } },
+      { "send": { "callback_data": "rule:price_below" } },
+      { "send": "5.00" },
+      { "expect": { "reply": "Alert rule saved" } },
+      { "send": "/list" },
+      { "expect": { "reply": "<b>TON</b>" } },
+      { "expect": { "reply_markup": { "inline_keyboard": [[{"text":"💰 Price now","callback_data":"price_now:TON"}],[{"text":"✏️ Edit rule","callback_data":"edit:TON:price_below"}],[{"text":"🗑 Remove","callback_data":"remove:TON:price_below"}]] } } }
+    ]
   }
 ]
