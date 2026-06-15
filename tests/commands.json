@@ -10,5 +10,9 @@
   {
     "command": "add",
     "description": "Search for a token by symbol or contract address and add to watchlist"
+  },
+  {
+    "command": "price",
+    "description": "Show current price, 1h change, and 24h change for a token"
   }
 ]

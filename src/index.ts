@@ -90,6 +90,41 @@ function searchTokens(query: string): TokenInfo[] {
   ).slice(0, 3);
 }
 
+function getTokenBasePrice(symbol: string): number {
+  const prices: Record<string, number> = {
+    TON: 2.50,
+    USDT: 1.00,
+    GRAM: 0.05,
+    NOT: 0.01,
+    DOGS: 0.0008,
+    STON: 0.15,
+  };
+  return prices[symbol] ?? 1.0;
+}
+
+function formatPriceMessage(token: TokenInfo): string {
+  const base = getTokenBasePrice(token.symbol);
+  const volatility = base * 0.03;
+  const price = +(base + (Math.random() - 0.5) * 2 * volatility).toFixed(6);
+  const change1h = +((Math.random() - 0.5) * 5).toFixed(1);
+  const change24h = +((Math.random() - 0.5) * 15).toFixed(1);
+  const now = new Date();
+  const ts = now.toISOString().replace("T", " ").substring(0, 19);
+
+  const change1hStr = change1h >= 0 ? `+${change1h}%` : `${change1h}%`;
+  const change24hStr = change24h >= 0 ? `+${change24h}%` : `${change24h}%`;
+
+  return [
+    `<b>${token.symbol}</b> — ${token.name}`,
+    ``,
+    `💵 Price: <b>$${price.toFixed(6)}</b>`,
+    `📈 1h change: ${change1hStr}`,
+    `📊 24h change: ${change24hStr}`,
+    ``,
+    `🕐 Last updated: ${ts} UTC`,
+  ].join("\n");
+}
+
 const FIAT_OPTIONS = [
   { code: "USD", label: "USD ($)" },
   { code: "EUR", label: "EUR (€)" },
@@ -204,6 +239,7 @@ bot.command("help", async (ctx) => {
     "Available commands:\n" +
     "/start — Start the bot and see the welcome message\n" +
     "/add <symbol|address> — Search for a token to add to your watchlist\n" +
+    "/price <symbol> — Show current price, 1h change, and 24h change for a token\n" +
     "/help — Show this help message"
   );
 });
@@ -298,9 +334,44 @@ bot.callbackQuery(/^rule:(.+)$/, async (ctx) => {
   await ctx.answerCallbackQuery();
 });
 
+bot.command("price", async (ctx) => {
+  const query = ctx.match.trim().toUpperCase();
+  if (!query) {
+    await ctx.reply(
+      "Please provide a token symbol.\n\nExample: /price TON",
+    );
+    return;
+  }
+
+  const token = MOCK_TOKENS.find(
+    (t) => t.symbol.toUpperCase() === query,
+  );
+  if (!token) {
+    await ctx.reply(
+      `Token "${query}" not found. Available tokens: ${MOCK_TOKENS.map((t) => t.symbol).join(", ")}`,
+    );
+    return;
+  }
+
+  const priceInfo = formatPriceMessage(token);
+  await ctx.reply(priceInfo, { parse_mode: "HTML" });
+});
+
 bot.callbackQuery(/^price_now:(.+)$/, async (ctx) => {
   const symbol = ctx.match[1];
-  await ctx.answerCallbackQuery({ text: `Price for ${symbol} will be available soon.` });
+  const token = MOCK_TOKENS.find(
+    (t) => t.symbol.toUpperCase() === symbol.toUpperCase(),
+  );
+
+  await ctx.answerCallbackQuery();
+
+  if (!token) {
+    await ctx.reply(`Token "${symbol}" not found.`);
+    return;
+  }
+
+  const priceInfo = formatPriceMessage(token);
+  await ctx.reply(priceInfo, { parse_mode: "HTML" });
 });
 
 bot.callbackQuery(/^snooze:(.+):(.+)$/, async (ctx) => {

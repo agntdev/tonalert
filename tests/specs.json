@@ -86,5 +86,42 @@
       { "expect": { "reply": "Timezone set to UTC+8 (Shanghai)." } },
       { "expect": { "reply": "Use the menu below to get started." } }
     ]
+  },
+  {
+    "name": "/price without symbol",
+    "steps": [
+      { "send": "/price" },
+      { "expect": { "reply": "Please provide a token symbol." } }
+    ]
+  },
+  {
+    "name": "/price for TON",
+    "steps": [
+      { "send": "/price TON" },
+      { "expect": { "reply": "TON" } },
+      { "expect": { "reply": "Price:" } }
+    ]
+  },
+  {
+    "name": "/price for unknown token",
+    "steps": [
+      { "send": "/price XYZ" },
+      { "expect": { "reply": "not found" } }
+    ]
+  },
+  {
+    "name": "Price now button for TON",
+    "steps": [
+      { "send_callback": "price_now:TON" },
+      { "expect": { "reply": "TON" } },
+      { "expect": { "reply": "Price:" } }
+    ]
+  },
+  {
+    "name": "Price now button for unknown token",
+    "steps": [
+      { "send_callback": "price_now:XYZ" },
+      { "expect": { "reply": "not found" } }
+    ]
   }
 ]
