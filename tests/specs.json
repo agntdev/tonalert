@@ -27,5 +27,28 @@
       { "send": "/foobar" },
       { "expect": { "reply": "Type /help to see available commands." } }
     ]
+  },
+  {
+    "name": "/add without query",
+    "steps": [
+      { "send": "/add" },
+      { "expect": { "reply": "Please provide a token symbol or contract address to search for." } }
+    ]
+  },
+  {
+    "name": "/add with valid symbol (TON)",
+    "steps": [
+      { "send": "/add TON" },
+      { "expect": { "reply": "Search results for" } },
+      { "expect": { "reply": "TON" } },
+      { "expect": { "reply_markup": { "inline_keyboard": [[{"text":"➕ Add TON","callback_data":"add:TON"}]] } } }
+    ]
+  },
+  {
+    "name": "/add with unknown symbol",
+    "steps": [
+      { "send": "/add XYZUNKNOWN" },
+      { "expect": { "reply": "No tokens found matching" } }
+    ]
   }
 ]
