@@ -1,0 +1,9 @@
+[
+  {
+    "name": "/start smoke",
+    "steps": [
+      { "send": "/start" },
+      { "expect": { "reply": "Welcome to TonAlert!" } }
+    ]
+  }
+]
