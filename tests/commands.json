@@ -14,5 +14,9 @@
   {
     "command": "list",
     "description": "View your watchlist with inline buttons for price check, edit, and remove"
+  },
+  {
+    "command": "morning_time",
+    "description": "Set your daily morning summary time (HH:MM 24-hour format)"
   }
 ]

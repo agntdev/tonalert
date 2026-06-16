@@ -150,5 +150,54 @@
       { "expect": { "reply": "Your Watchlist" } },
       { "expect": { "reply": "$3.00" } }
     ]
+  },
+  {
+    "name": "/morning_time without args shows current time",
+    "steps": [
+      { "send": "/morning_time" },
+      { "expect": { "reply": "Your morning summary is sent daily at" } },
+      { "expect": { "reply": "08:00" } }
+    ]
+  },
+  {
+    "name": "/morning_time set valid time",
+    "steps": [
+      { "send": "/morning_time 07:30" },
+      { "expect": { "reply": "Morning summary time set to" } },
+      { "expect": { "reply": "07:30" } }
+    ]
+  },
+  {
+    "name": "/morning_time invalid time format",
+    "steps": [
+      { "send": "/morning_time 25:00" },
+      { "expect": { "reply": "Invalid time" } }
+    ]
+  },
+  {
+    "name": "morning summary enable via onboarding",
+    "steps": [
+      { "send": "/start" },
+      { "expect": { "reply": "Welcome to TonAlert, Test User!" } },
+      { "send_callback": "fiat_select:USD" },
+      { "expect": { "reply": "Fiat currency set to USD ($)." } },
+      { "send_callback": "tz_select:UTC" },
+      { "expect": { "reply": "Timezone set to UTC (London)." } },
+      { "send_callback": "morning_summary:yes" },
+      { "expect": { "reply": "Morning summary enabled." } }
+    ]
+  },
+  {
+    "name": "morning summary disable via onboarding",
+    "steps": [
+      { "send": "/start" },
+      { "expect": { "reply": "Welcome to TonAlert, Test User!" } },
+      { "send_callback": "fiat_select:USD" },
+      { "expect": { "reply": "Fiat currency set to USD ($)." } },
+      { "send_callback": "tz_select:UTC" },
+      { "expect": { "reply": "Timezone set to UTC (London)." } },
+      { "send_callback": "morning_summary:no" },
+      { "expect": { "reply": "Morning summary disabled." } }
+    ]
   }
 ]

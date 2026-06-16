@@ -1,6 +1,7 @@
 import { Bot, Context, GrammyError, HttpError, InlineKeyboard, session, SessionFlavor } from "grammy";
 import { startWorker, AlertRule as WorkerAlertRule, AlertEvent as WorkerAlertEvent } from "./worker";
 import { parseNumber } from "./parse";
+import { startMorningScheduler } from "./morning";
 
 const BOT_TOKEN = process.env.BOT_TOKEN;
 if (!BOT_TOKEN) {
@@ -35,6 +36,8 @@ interface SessionData {
   fiat: string;
   timezone: string;
   morningSummary: boolean;
+  morningSummaryTime: string;
+  lastMorningSummary: number;
   selectedToken?: TokenInfo;
   pendingRule?: { token: TokenInfo; type: string };
   watchlist: AlertRule[];
@@ -47,7 +50,7 @@ const bot = new Bot<MyContext>(BOT_TOKEN);
 
 bot.use(session({
   initial(): SessionData {
-    return { fiat: "USD", timezone: "UTC", morningSummary: true, watchlist: [], alertHistory: [] };
+    return { fiat: "USD", timezone: "UTC", morningSummary: true, morningSummaryTime: "08:00", lastMorningSummary: 0, watchlist: [], alertHistory: [] };
   },
 }));
 
@@ -205,7 +208,41 @@ bot.command("help", async (ctx) => {
     "/start — Start the bot and see the welcome message\n" +
     "/add <symbol|address> — Search for a token to add to your watchlist\n" +
     "/list — View your watchlist\n" +
+    "/morning_time — Set your daily morning summary time\n" +
     "/help — Show this help message"
+  );
+});
+
+bot.command("morning_time", async (ctx) => {
+  const arg = ctx.match.trim();
+  if (!arg) {
+    await ctx.reply(
+      `Your morning summary is sent daily at <b>${ctx.session.morningSummaryTime}</b> ${ctx.session.timezone}.\n\nTo change it, use: /morning_time HH:MM (24-hour format)\n\nExample: /morning_time 07:30`,
+      { parse_mode: "HTML" },
+    );
+    return;
+  }
+
+  const match = arg.match(/^(\d{1,2}):(\d{2})$/);
+  if (!match) {
+    await ctx.reply(
+      "Invalid time format. Please use HH:MM (24-hour).\n\nExample: /morning_time 07:30",
+    );
+    return;
+  }
+
+  const hours = parseInt(match[1], 10);
+  const minutes = parseInt(match[2], 10);
+  if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59) {
+    await ctx.reply("Invalid time. Hours must be 0–23 and minutes 0–59.\n\nExample: /morning_time 08:00");
+    return;
+  }
+
+  ctx.session.morningSummaryTime = `${hours.toString().padStart(2, "0")}:${minutes.toString().padStart(2, "0")}`;
+
+  await ctx.reply(
+    `Morning summary time set to <b>${ctx.session.morningSummaryTime}</b> ${ctx.session.timezone}. ✅\n\nYour summary will be delivered daily at this time.`,
+    { parse_mode: "HTML" },
   );
 });
 
@@ -502,5 +539,7 @@ bot.start({
         },
       },
     );
+
+    startMorningScheduler(bot, () => userSessions);
   },
 });
