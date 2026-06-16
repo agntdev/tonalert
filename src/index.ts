@@ -2,16 +2,11 @@ import { Bot, Context, GrammyError, HttpError, InlineKeyboard, session, SessionF
 import { startWorker, AlertRule as WorkerAlertRule, AlertEvent as WorkerAlertEvent } from "./worker";
 import { parseNumber } from "./parse";
 import { connectRedis } from "./redis";
+import { getConfig } from "./env";
 
-const BOT_TOKEN = process.env.BOT_TOKEN;
-if (!BOT_TOKEN) {
-  throw new Error("BOT_TOKEN environment variable is required");
-}
-
-const OWNER_ID = process.env.OWNER_ID ? parseInt(process.env.OWNER_ID, 10) : undefined;
-if (!OWNER_ID) {
-  throw new Error("OWNER_ID environment variable is required");
-}
+const config = getConfig();
+const BOT_TOKEN = config.botToken;
+const OWNER_ID = config.ownerId;
 
 interface TokenInfo {
   symbol: string;

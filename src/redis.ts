@@ -1,9 +1,10 @@
 import Redis from "ioredis";
+import { getConfig } from "./env";
 
 let redisClient: Redis | null = null;
 
 function getRedisUrl(): string | undefined {
-  return process.env.REDIS_URL;
+  return getConfig().redisUrl;
 }
 
 export function getRedis(): Redis | null {
