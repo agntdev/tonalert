@@ -186,5 +186,61 @@
       { "expect": { "reply": "Active watch rules:" } },
       { "expect": { "reply": "Alerts fired (last 24h):" } }
     ]
+  },
+  {
+    "name": "/morning displays settings",
+    "steps": [
+      { "send": "/morning" },
+      { "expect": { "reply": "Morning Summary Settings" } },
+      { "expect": { "reply": "ON — daily at 09:00" } },
+      { "expect": { "reply_markup": { "inline_keyboard": [[{"text":"🔕 Disable morning summary","callback_data":"morning:toggle"}],[{"text":"⏰ Time: 09:00","callback_data":"morning:set_time"}]] } } }
+    ]
+  },
+  {
+    "name": "/morning toggle disable",
+    "steps": [
+      { "send": "/morning" },
+      { "expect": { "reply": "Morning Summary Settings" } },
+      { "send_callback": "morning:toggle" },
+      { "expect": { "reply": "OFF" } },
+      { "expect": { "reply_markup": { "inline_keyboard": [[{"text":"🔔 Enable morning summary","callback_data":"morning:toggle"}],[{"text":"⏰ Time: 09:00","callback_data":"morning:set_time"}]] } } }
+    ]
+  },
+  {
+    "name": "/morning set time",
+    "steps": [
+      { "send": "/morning" },
+      { "expect": { "reply": "Morning Summary Settings" } },
+      { "send_callback": "morning:set_time" },
+      { "expect": { "reply": "Current morning summary time:" } },
+      { "expect": { "reply": "Select a new time or enter a custom one:" } },
+      { "send_callback": "morning_set_time:07:00" },
+      { "expect": { "reply": "ON — daily at 07:00" } }
+    ]
+  },
+  {
+    "name": "morning summary onboarding flow",
+    "steps": [
+      { "send": "/start" },
+      { "expect": { "reply": "Welcome to TonAlert, Test User!" } },
+      { "send_callback": "fiat_select:USD" },
+      { "expect": { "reply": "Fiat currency set to USD ($)." } },
+      { "send_callback": "tz_select:UTC" },
+      { "expect": { "reply": "Timezone set to UTC (London)." } },
+      { "expect": { "reply": "Would you like to receive a daily morning summary" } },
+      { "send_callback": "morning_summary:yes" },
+      { "expect": { "reply": "You'll receive a daily morning summary" } },
+      { "expect": { "reply": "Select a time or enter a custom one:" } },
+      { "send_callback": "morning_time:08:00" },
+      { "expect": { "reply": "Morning summary time set to" } },
+      { "expect": { "reply": "Use the menu below to get started." } }
+    ]
+  },
+  {
+    "name": "/help mentions morning command",
+    "steps": [
+      { "send": "/help" },
+      { "expect": { "reply": "/morning" } }
+    ]
   }
 ]
