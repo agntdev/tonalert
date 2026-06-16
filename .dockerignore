@@ -1,0 +1,13 @@
+node_modules/
+dist/
+*.tgz
+.git/
+.gitignore
+.env
+.env.*
+README.md
+docs/
+tests/
+tasks/
+.github/
+docker-compose*.yml

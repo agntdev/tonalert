@@ -4,3 +4,4 @@ dist/
 !.agntdev-bot-toolkit.tgz
 .env
 .env.*
+!.env.example
