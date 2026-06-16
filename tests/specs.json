@@ -169,5 +169,22 @@
       { "expect": { "reply": "OFF" } },
       { "expect": { "reply_markup": { "inline_keyboard": [[{"text":"🔔 Enable quiet hours","callback_data":"quiet:toggle"}],[{"text":"⏰ Start: 23:00","callback_data":"quiet:set_start"}],[{"text":"🌅 End: 07:00","callback_data":"quiet:set_end"}],[{"text":"⚡ Immediate: OFF (tap to enable)","callback_data":"quiet:toggle_immediate"}]] } } }
     ]
+  },
+  {
+    "name": "/stats by non-owner is denied",
+    "steps": [
+      { "send": "/stats" },
+      { "expect": { "reply": "This command is only available to the bot owner." } }
+    ]
+  },
+  {
+    "name": "/stats by owner shows analytics",
+    "steps": [
+      { "send": "/stats", "from": "owner" },
+      { "expect": { "reply": "Bot Statistics" } },
+      { "expect": { "reply": "Total users:" } },
+      { "expect": { "reply": "Active watch rules:" } },
+      { "expect": { "reply": "Alerts fired (last 24h):" } }
+    ]
   }
 ]
