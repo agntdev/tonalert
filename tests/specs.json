@@ -150,5 +150,24 @@
       { "expect": { "reply": "Your Watchlist" } },
       { "expect": { "reply": "$3.00" } }
     ]
+  },
+  {
+    "name": "/quiet displays settings",
+    "steps": [
+      { "send": "/quiet" },
+      { "expect": { "reply": "Quiet Hours Settings" } },
+      { "expect": { "reply": "ON — 23:00 to 07:00" } },
+      { "expect": { "reply_markup": { "inline_keyboard": [[{"text":"🔕 Disable quiet hours","callback_data":"quiet:toggle"}],[{"text":"⏰ Start: 23:00","callback_data":"quiet:set_start"}],[{"text":"🌅 End: 07:00","callback_data":"quiet:set_end"}],[{"text":"⚡ Immediate: OFF (tap to enable)","callback_data":"quiet:toggle_immediate"}]] } } }
+    ]
+  },
+  {
+    "name": "/quiet toggle disable",
+    "steps": [
+      { "send": "/quiet" },
+      { "expect": { "reply": "Quiet Hours Settings" } },
+      { "send_callback": "quiet:toggle" },
+      { "expect": { "reply": "OFF" } },
+      { "expect": { "reply_markup": { "inline_keyboard": [[{"text":"🔔 Enable quiet hours","callback_data":"quiet:toggle"}],[{"text":"⏰ Start: 23:00","callback_data":"quiet:set_start"}],[{"text":"🌅 End: 07:00","callback_data":"quiet:set_end"}],[{"text":"⚡ Immediate: OFF (tap to enable)","callback_data":"quiet:toggle_immediate"}]] } } }
+    ]
   }
 ]

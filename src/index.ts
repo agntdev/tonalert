@@ -37,8 +37,14 @@ interface SessionData {
   morningSummary: boolean;
   selectedToken?: TokenInfo;
   pendingRule?: { token: TokenInfo; type: string };
+  pendingQuietSetting?: "start" | "end";
   watchlist: AlertRule[];
   alertHistory: AlertEvent[];
+  quietHoursStart: string;
+  quietHoursEnd: string;
+  quietHoursEnabled: boolean;
+  quietHoursImmediate: boolean;
+  accumulatedAlerts: AlertEvent[];
 }
 
 type MyContext = Context & SessionFlavor<SessionData>;
@@ -47,7 +53,7 @@ const bot = new Bot<MyContext>(BOT_TOKEN);
 
 bot.use(session({
   initial(): SessionData {
-    return { fiat: "USD", timezone: "UTC", morningSummary: true, watchlist: [], alertHistory: [] };
+    return { fiat: "USD", timezone: "UTC", morningSummary: true, watchlist: [], alertHistory: [], quietHoursStart: "23:00", quietHoursEnd: "07:00", quietHoursEnabled: true, quietHoursImmediate: false, accumulatedAlerts: [] };
   },
 }));
 
@@ -205,8 +211,118 @@ bot.command("help", async (ctx) => {
     "/start — Start the bot and see the welcome message\n" +
     "/add <symbol|address> — Search for a token to add to your watchlist\n" +
     "/list — View your watchlist\n" +
+    "/quiet — Configure quiet hours for alert suppression\n" +
     "/help — Show this help message"
   );
+});
+
+bot.command("quiet", async (ctx) => {
+  const s = ctx.session;
+  const keyboard = new InlineKeyboard();
+
+  if (s.quietHoursEnabled) {
+    keyboard.text("🔕 Disable quiet hours", "quiet:toggle").row();
+  } else {
+    keyboard.text("🔔 Enable quiet hours", "quiet:toggle").row();
+  }
+
+  keyboard
+    .text(`⏰ Start: ${s.quietHoursStart}`, "quiet:set_start").row()
+    .text(`🌅 End: ${s.quietHoursEnd}`, "quiet:set_end").row();
+
+  if (s.quietHoursImmediate) {
+    keyboard.text("⚡ Immediate: ON (tap to disable)", "quiet:toggle_immediate");
+  } else {
+    keyboard.text("⚡ Immediate: OFF (tap to enable)", "quiet:toggle_immediate");
+  }
+
+  const status = s.quietHoursEnabled
+    ? `ON — ${s.quietHoursStart} to ${s.quietHoursEnd}`
+    : "OFF";
+
+  await ctx.reply(
+    `🌙 <b>Quiet Hours Settings</b>\n\nStatus: ${status}\nImmediate delivery: ${s.quietHoursImmediate ? "Yes" : "No"}\nAccumulated alerts: ${s.accumulatedAlerts.length}\n\nAlerts during quiet hours will be accumulated and delivered when quiet hours end, unless immediate delivery is enabled.\n\nUse the buttons below to configure:`,
+    { reply_markup: keyboard, parse_mode: "HTML" },
+  );
+});
+
+bot.callbackQuery("quiet:toggle", async (ctx) => {
+  ctx.session.quietHoursEnabled = !ctx.session.quietHoursEnabled;
+  const status = ctx.session.quietHoursEnabled ? "enabled" : "disabled";
+  await ctx.answerCallbackQuery({ text: `Quiet hours ${status}.` });
+
+  const s = ctx.session;
+  const keyboard = new InlineKeyboard();
+
+  if (s.quietHoursEnabled) {
+    keyboard.text("🔕 Disable quiet hours", "quiet:toggle").row();
+  } else {
+    keyboard.text("🔔 Enable quiet hours", "quiet:toggle").row();
+  }
+
+  keyboard
+    .text(`⏰ Start: ${s.quietHoursStart}`, "quiet:set_start").row()
+    .text(`🌅 End: ${s.quietHoursEnd}`, "quiet:set_end").row();
+
+  if (s.quietHoursImmediate) {
+    keyboard.text("⚡ Immediate: ON (tap to disable)", "quiet:toggle_immediate");
+  } else {
+    keyboard.text("⚡ Immediate: OFF (tap to enable)", "quiet:toggle_immediate");
+  }
+
+  const statusText = s.quietHoursEnabled
+    ? `ON — ${s.quietHoursStart} to ${s.quietHoursEnd}`
+    : "OFF";
+
+  await ctx.editMessageText(
+    `🌙 <b>Quiet Hours Settings</b>\n\nStatus: ${statusText}\nImmediate delivery: ${s.quietHoursImmediate ? "Yes" : "No"}\nAccumulated alerts: ${s.accumulatedAlerts.length}\n\nAlerts during quiet hours will be accumulated and delivered when quiet hours end, unless immediate delivery is enabled.\n\nUse the buttons below to configure:`,
+    { reply_markup: keyboard, parse_mode: "HTML" },
+  );
+});
+
+bot.callbackQuery("quiet:toggle_immediate", async (ctx) => {
+  ctx.session.quietHoursImmediate = !ctx.session.quietHoursImmediate;
+  await ctx.answerCallbackQuery({
+    text: `Immediate delivery ${ctx.session.quietHoursImmediate ? "enabled" : "disabled"}.`,
+  });
+
+  const s = ctx.session;
+  const keyboard = new InlineKeyboard();
+
+  if (s.quietHoursEnabled) {
+    keyboard.text("🔕 Disable quiet hours", "quiet:toggle").row();
+  } else {
+    keyboard.text("🔔 Enable quiet hours", "quiet:toggle").row();
+  }
+
+  keyboard
+    .text(`⏰ Start: ${s.quietHoursStart}`, "quiet:set_start").row()
+    .text(`🌅 End: ${s.quietHoursEnd}`, "quiet:set_end").row();
+
+  if (s.quietHoursImmediate) {
+    keyboard.text("⚡ Immediate: ON (tap to disable)", "quiet:toggle_immediate");
+  } else {
+    keyboard.text("⚡ Immediate: OFF (tap to enable)", "quiet:toggle_immediate");
+  }
+
+  const statusText = s.quietHoursEnabled
+    ? `ON — ${s.quietHoursStart} to ${s.quietHoursEnd}`
+    : "OFF";
+
+  await ctx.editMessageText(
+    `🌙 <b>Quiet Hours Settings</b>\n\nStatus: ${statusText}\nImmediate delivery: ${s.quietHoursImmediate ? "Yes" : "No"}\nAccumulated alerts: ${s.accumulatedAlerts.length}\n\nAlerts during quiet hours will be accumulated and delivered when quiet hours end, unless immediate delivery is enabled.\n\nUse the buttons below to configure:`,
+    { reply_markup: keyboard, parse_mode: "HTML" },
+  );
+});
+
+bot.callbackQuery(/^quiet:set_(start|end)$/, async (ctx) => {
+  const target = ctx.match[1] as "start" | "end";
+  ctx.session.pendingQuietSetting = target;
+  const label = target === "start" ? "start" : "end";
+  await ctx.editMessageText(
+    `Please enter the quiet hours ${label} time in HH:MM format (24-hour).\n\nExample: 23:00 for 11 PM\n\n(Send /cancel to abort)`,
+  );
+  await ctx.answerCallbackQuery();
 });
 
 bot.command("list", async (ctx) => {
@@ -398,6 +514,65 @@ bot.callbackQuery(/^disable:(.+):(.+)$/, async (ctx) => {
 });
 
 bot.on("message:text", async (ctx, next) => {
+  const pendingQuiet = ctx.session.pendingQuietSetting;
+  if (pendingQuiet) {
+    const text = ctx.message.text.trim();
+
+    if (text === "/cancel") {
+      ctx.session.pendingQuietSetting = undefined;
+      await ctx.reply("Quiet hours configuration cancelled. Use /quiet to see settings.");
+      return;
+    }
+
+    const match = text.match(/^(\d{1,2}):(\d{2})$/);
+    if (!match) {
+      await ctx.reply("❌ Invalid format. Please enter the time as HH:MM (e.g., 23:00).\n\n(Send /cancel to abort)");
+      return;
+    }
+
+    const hours = parseInt(match[1], 10);
+    const minutes = parseInt(match[2], 10);
+    if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59) {
+      await ctx.reply("❌ Invalid time. Hours must be 0-23 and minutes 0-59.\n\n(Send /cancel to abort)");
+      return;
+    }
+
+    const formatted = `${hours.toString().padStart(2, "0")}:${minutes.toString().padStart(2, "0")}`;
+
+    if (pendingQuiet === "start") {
+      ctx.session.quietHoursStart = formatted;
+    } else {
+      ctx.session.quietHoursEnd = formatted;
+    }
+    ctx.session.pendingQuietSetting = undefined;
+
+    const s = ctx.session;
+    const statusText = s.quietHoursEnabled
+      ? `ON — ${s.quietHoursStart} to ${s.quietHoursEnd}`
+      : "OFF";
+
+    const keyboard = new InlineKeyboard();
+    if (s.quietHoursEnabled) {
+      keyboard.text("🔕 Disable quiet hours", "quiet:toggle").row();
+    } else {
+      keyboard.text("🔔 Enable quiet hours", "quiet:toggle").row();
+    }
+    keyboard
+      .text(`⏰ Start: ${s.quietHoursStart}`, "quiet:set_start").row()
+      .text(`🌅 End: ${s.quietHoursEnd}`, "quiet:set_end").row();
+    if (s.quietHoursImmediate) {
+      keyboard.text("⚡ Immediate: ON (tap to disable)", "quiet:toggle_immediate");
+    } else {
+      keyboard.text("⚡ Immediate: OFF (tap to enable)", "quiet:toggle_immediate");
+    }
+
+    await ctx.reply(
+      `🌙 <b>Quiet Hours Settings</b>\n\nStatus: ${statusText}\nImmediate delivery: ${s.quietHoursImmediate ? "Yes" : "No"}\nAccumulated alerts: ${s.accumulatedAlerts.length}\n\nAlerts during quiet hours will be accumulated and delivered when quiet hours end, unless immediate delivery is enabled.`,
+      { reply_markup: keyboard, parse_mode: "HTML" },
+    );
+    return;
+  }
+
   const pending = ctx.session.pendingRule;
   if (!pending) {
     await next();
@@ -475,11 +650,21 @@ bot.start({
     startWorker(
       bot,
       () => {
-        const result: { chatId: number; rules: WorkerAlertRule[] }[] = [];
+        const result: { chatId: number; rules: WorkerAlertRule[]; quietHours: { enabled: boolean; start: string; end: string; immediate: boolean; timezone: string } }[] = [];
         for (const [chatId, session] of userSessions) {
           const rules = buildWatchlistRulesFromSession(session);
           if (rules.length > 0) {
-            result.push({ chatId, rules });
+            result.push({
+              chatId,
+              rules,
+              quietHours: {
+                enabled: session.quietHoursEnabled,
+                start: session.quietHoursStart,
+                end: session.quietHoursEnd,
+                immediate: session.quietHoursImmediate,
+                timezone: session.timezone,
+              },
+            });
           }
         }
         return result;
