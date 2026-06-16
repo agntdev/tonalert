@@ -1,16 +1,7 @@
 import { Bot, Context, GrammyError, HttpError, InlineKeyboard, session, SessionFlavor } from "grammy";
 import { startWorker, AlertRule as WorkerAlertRule, AlertEvent as WorkerAlertEvent } from "./worker";
 import { parseNumber } from "./parse";
-
-const BOT_TOKEN = process.env.BOT_TOKEN;
-if (!BOT_TOKEN) {
-  throw new Error("BOT_TOKEN environment variable is required");
-}
-
-const OWNER_ID = process.env.OWNER_ID ? parseInt(process.env.OWNER_ID, 10) : undefined;
-if (!OWNER_ID) {
-  throw new Error("OWNER_ID environment variable is required");
-}
+import { config } from "./config";
 
 interface TokenInfo {
   symbol: string;
@@ -54,7 +45,7 @@ interface SessionData {
 
 type MyContext = Context & SessionFlavor<SessionData>;
 
-const bot = new Bot<MyContext>(BOT_TOKEN);
+const bot = new Bot<MyContext>(config.botToken);
 
 bot.use(session({
   initial(): SessionData {
@@ -222,7 +213,7 @@ bot.command("help", async (ctx) => {
 });
 
 bot.command("stats", async (ctx) => {
-  if (ctx.from?.id !== OWNER_ID) {
+  if (ctx.from?.id !== config.ownerId) {
     await ctx.reply("This command is only available to the bot owner.");
     return;
   }
@@ -747,7 +738,7 @@ bot.start({
           }
         },
       },
-      { ownerId: OWNER_ID, getTotalUsers: () => userSessions.size },
+      { ownerId: config.ownerId, getTotalUsers: () => userSessions.size },
     );
   },
 });
