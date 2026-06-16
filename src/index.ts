@@ -1,7 +1,7 @@
 import { Bot, Context, GrammyError, HttpError, InlineKeyboard, session, SessionFlavor } from "grammy";
-import { startWorker, AlertRule as WorkerAlertRule, AlertEvent as WorkerAlertEvent } from "./worker";
+import { startWorker, AlertRule as WorkerAlertRule, AlertEvent as WorkerAlertEvent, basePrice, fetchMockPrice } from "./worker";
 import { parseNumber } from "./parse";
-import { connectRedis } from "./redis";
+import { connectRedis, getCachedPrice } from "./redis";
 import { getConfig } from "./env";
 
 const config = getConfig();
@@ -257,9 +257,47 @@ bot.command("help", async (ctx) => {
     "/start — Start the bot and see the welcome message\n" +
     "/add <symbol|address> — Search for a token to add to your watchlist\n" +
     "/list — View your watchlist\n" +
+    "/price <symbol> — Check current price, 1h change, and 24h change for a token\n" +
     "/quiet — Configure quiet hours for alert suppression\n" +
     "/morning — Configure your daily morning summary\n" +
     "/help — Show this help message"
+  );
+});
+
+bot.command("price", async (ctx) => {
+  const query = ctx.match.trim();
+  if (!query) {
+    await ctx.reply(
+      "Please provide a token symbol to check the price.\n\nExample: /price TON",
+    );
+    return;
+  }
+
+  const token = MOCK_TOKENS.find(
+    (t) => t.symbol.toLowerCase() === query.toLowerCase(),
+  );
+  if (!token) {
+    await ctx.reply(`Token "${query}" not found. Try a symbol like TON, USDT, or NOT.`);
+    return;
+  }
+
+  const { price, previousPrice } = await fetchMockPrice(token);
+  const cached = await getCachedPrice(token.symbol);
+  const timestamp = cached?.timestamp ?? Date.now();
+
+  const change1h = ((price - previousPrice) / previousPrice) * 100;
+  const b = basePrice(token);
+  const change24h = ((price - b) / b) * 100;
+
+  const sign1h = change1h >= 0 ? "+" : "";
+  const sign24h = change24h >= 0 ? "+" : "";
+  const dateStr = new Date(timestamp).toISOString().replace("T", " ").slice(0, 16) + " UTC";
+
+  await ctx.reply(
+    `<b>${token.symbol}</b> — $${price.toFixed(4)}\n` +
+    `1h: ${sign1h}${change1h.toFixed(1)}% | 24h: ${sign24h}${change24h.toFixed(1)}%\n` +
+    `Updated: ${dateStr}`,
+    { parse_mode: "HTML" },
   );
 });
 
@@ -656,7 +694,31 @@ bot.callbackQuery(/^rule:(.+)$/, async (ctx) => {
 
 bot.callbackQuery(/^price_now:(.+)$/, async (ctx) => {
   const symbol = ctx.match[1];
-  await ctx.answerCallbackQuery({ text: `Price for ${symbol} will be available soon.` });
+  const token = MOCK_TOKENS.find((t) => t.symbol === symbol);
+  if (!token) {
+    await ctx.answerCallbackQuery({ text: "Token not found." });
+    return;
+  }
+
+  const { price, previousPrice } = await fetchMockPrice(token);
+  const cached = await getCachedPrice(symbol);
+  const timestamp = cached?.timestamp ?? Date.now();
+
+  const change1h = ((price - previousPrice) / previousPrice) * 100;
+  const b = basePrice(token);
+  const change24h = ((price - b) / b) * 100;
+
+  const sign1h = change1h >= 0 ? "+" : "";
+  const sign24h = change24h >= 0 ? "+" : "";
+  const dateStr = new Date(timestamp).toISOString().replace("T", " ").slice(0, 16) + " UTC";
+
+  await ctx.reply(
+    `<b>${token.symbol}</b> — $${price.toFixed(4)}\n` +
+    `1h: ${sign1h}${change1h.toFixed(1)}% | 24h: ${sign24h}${change24h.toFixed(1)}%\n` +
+    `Updated: ${dateStr}`,
+    { parse_mode: "HTML" },
+  );
+  await ctx.answerCallbackQuery();
 });
 
 bot.callbackQuery(/^edit_rule:(.+):(.+)$/, async (ctx) => {

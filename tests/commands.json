@@ -16,6 +16,10 @@
     "description": "View your watchlist with inline buttons for price check, edit, and remove"
   },
   {
+    "command": "price",
+    "description": "Check the current price, 1h change, 24h change, and last update time for a token"
+  },
+  {
     "command": "quiet",
     "description": "Configure quiet hours to suppress alerts during specified time window"
   },

@@ -242,5 +242,48 @@
       { "send": "/help" },
       { "expect": { "reply": "/morning" } }
     ]
+  },
+  {
+    "name": "/help mentions price command",
+    "steps": [
+      { "send": "/help" },
+      { "expect": { "reply": "/price" } }
+    ]
+  },
+  {
+    "name": "/price without query",
+    "steps": [
+      { "send": "/price" },
+      { "expect": { "reply": "Please provide a token symbol to check the price." } }
+    ]
+  },
+  {
+    "name": "/price with valid symbol (TON)",
+    "steps": [
+      { "send": "/price TON" },
+      { "expect": { "reply": "TON" } },
+      { "expect": { "reply": "1h:" } },
+      { "expect": { "reply": "24h:" } },
+      { "expect": { "reply": "Updated:" } }
+    ]
+  },
+  {
+    "name": "/price with unknown symbol",
+    "steps": [
+      { "send": "/price XYZUNKNOWN" },
+      { "expect": { "reply": "not found" } }
+    ]
+  },
+  {
+    "name": "price_now callback shows price info",
+    "steps": [
+      { "send": "/add TON" },
+      { "expect": { "reply": "Search results for" } },
+      { "send_callback": "price_now:TON" },
+      { "expect": { "reply": "TON" } },
+      { "expect": { "reply": "1h:" } },
+      { "expect": { "reply": "24h:" } },
+      { "expect": { "reply": "Updated:" } }
+    ]
   }
 ]

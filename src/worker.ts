@@ -293,7 +293,7 @@ function getCooldownKey(chatId: number, tokenSymbol: string, ruleType: string): 
   return `${chatId}:${tokenSymbol}:${ruleType}`;
 }
 
-function basePrice(token: TokenInfo): number {
+export function basePrice(token: TokenInfo): number {
   switch (token.symbol) {
     case "TON": return 2.50;
     case "USDT": return 1.00;
@@ -305,7 +305,7 @@ function basePrice(token: TokenInfo): number {
   }
 }
 
-async function fetchMockPrice(token: TokenInfo): Promise<{ price: number; previousPrice: number }> {
+export async function fetchMockPrice(token: TokenInfo): Promise<{ price: number; previousPrice: number }> {
   const key = token.symbol;
   const cached = await getCachedPrice(key);
   const now = Date.now();
