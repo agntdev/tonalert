@@ -1,4 +1,4 @@
-import { Bot, Context, GrammyError, HttpError, InlineKeyboard, session, SessionFlavor } from "grammy";
+import { Bot, Context, GrammyError, HttpError, InlineKeyboard, InputFile, session, SessionFlavor } from "grammy";
 import { startWorker, AlertRule as WorkerAlertRule, AlertEvent as WorkerAlertEvent } from "./worker";
 import { parseNumber } from "./parse";
 import { connectRedis } from "./redis";
@@ -259,6 +259,8 @@ bot.command("help", async (ctx) => {
     "/list — View your watchlist\n" +
     "/quiet — Configure quiet hours for alert suppression\n" +
     "/morning — Configure your daily morning summary\n" +
+    "/export [date] — Export alert events as CSV (owner only)\n" +
+    "/stats — Show bot usage statistics (owner only)\n" +
     "/help — Show this help message"
   );
 });
@@ -318,6 +320,73 @@ bot.command("stats", async (ctx) => {
 
   await ctx.reply(message, { parse_mode: "HTML" });
 });
+
+bot.command("export", async (ctx) => {
+  if (ctx.from?.id !== OWNER_ID) {
+    await ctx.reply("This command is only available to the bot owner.");
+    return;
+  }
+
+  const arg = ctx.match.trim();
+  let sinceDate: Date | null = null;
+
+  if (arg) {
+    const parsed = new Date(arg);
+    if (isNaN(parsed.getTime())) {
+      await ctx.reply("Invalid date format. Use YYYY-MM-DD or ISO 8601.\n\nExample: /export 2024-01-01");
+      return;
+    }
+    sinceDate = parsed;
+  }
+
+  const sinceTs = sinceDate ? sinceDate.getTime() : 0;
+
+  const csvRows: string[] = [];
+  csvRows.push("chat_id,timestamp,token_symbol,token_name,token_address,rule_type,trigger_description,current_price,baseline_price,percent_change,delivered");
+
+  let total = 0;
+  for (const [chatId, session] of userSessions) {
+    for (const event of session.alertHistory) {
+      if (event.timestamp >= sinceTs) {
+        total++;
+        csvRows.push([
+          chatId.toString(),
+          new Date(event.timestamp).toISOString(),
+          escapeCsvField(event.token.symbol),
+          escapeCsvField(event.token.name),
+          escapeCsvField(event.token.address),
+          escapeCsvField(event.ruleType),
+          escapeCsvField(event.triggerDescription),
+          event.currentPrice.toString(),
+          event.baselinePrice?.toString() ?? "",
+          event.percentChange?.toString() ?? "",
+          event.delivered.toString(),
+        ].join(","));
+      }
+    }
+  }
+
+  if (total === 0) {
+    const label = sinceDate ? ` since ${sinceDate.toISOString().split("T")[0]}` : "";
+    await ctx.reply(`No alert events found${label}.`);
+    return;
+  }
+
+  const csv = csvRows.join("\n");
+  const filename = `alerts_export_${new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19)}.csv`;
+  const buffer = Buffer.from(csv, "utf-8");
+
+  await ctx.replyWithDocument(new InputFile(buffer, filename), {
+    caption: `Exported ${total} alert event${total !== 1 ? "s" : ""}${sinceDate ? ` since ${sinceDate.toISOString().split("T")[0]}` : ""}.`,
+  });
+});
+
+function escapeCsvField(value: string): string {
+  if (value.includes(",") || value.includes('"') || value.includes("\n") || value.includes("\r")) {
+    return `"${value.replace(/"/g, '""')}"`;
+  }
+  return value;
+}
 
 bot.command("morning", async (ctx) => {
   const s = ctx.session;

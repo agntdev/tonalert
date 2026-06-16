@@ -26,5 +26,9 @@
   {
     "command": "stats",
     "description": "Show bot usage statistics including total users, active watch rules, top tracked tokens, and recent alerts (owner only)"
+  },
+  {
+    "command": "export",
+    "description": "Export alert events as a CSV file since a specified date (owner only)"
   }
 ]

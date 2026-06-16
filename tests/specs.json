@@ -242,5 +242,33 @@
       { "send": "/help" },
       { "expect": { "reply": "/morning" } }
     ]
+  },
+  {
+    "name": "/export by non-owner is denied",
+    "steps": [
+      { "send": "/export" },
+      { "expect": { "reply": "This command is only available to the bot owner." } }
+    ]
+  },
+  {
+    "name": "/export by owner with no events",
+    "steps": [
+      { "send": "/export", "from": "owner" },
+      { "expect": { "reply": "No alert events found" } }
+    ]
+  },
+  {
+    "name": "/export by owner with invalid date",
+    "steps": [
+      { "send": "/export not-a-date", "from": "owner" },
+      { "expect": { "reply": "Invalid date format." } }
+    ]
+  },
+  {
+    "name": "/help mentions export command",
+    "steps": [
+      { "send": "/help" },
+      { "expect": { "reply": "/export" } }
+    ]
   }
 ]
