@@ -61,6 +61,7 @@ interface OutageEvent {
 const globalAlertTimestamps: number[] = [];
 const globalOutageEvents: OutageEvent[] = [];
 let lastDigestDate = "";
+const morningSummarySent = new Map<number, string>();
 
 function recordAlertTimestamp(timestamp: number): void {
   globalAlertTimestamps.push(timestamp);
@@ -169,6 +170,78 @@ function parseTimezoneOffsetMinutes(tz: string): number {
 function parseTimeToMinutes(time: string): number {
   const [h, m] = time.split(":").map(Number);
   return h * 60 + m;
+}
+
+function shouldSendMorningSummary(
+  timezone: string,
+  morningSummaryTime: string,
+  lastDeliveredDate: string | undefined,
+): boolean {
+  const now = new Date();
+  const today = now.toISOString().split("T")[0];
+  if (lastDeliveredDate === today) return false;
+
+  const offsetMin = parseTimezoneOffsetMinutes(timezone);
+  const utcTotalMin = now.getUTCHours() * 60 + now.getUTCMinutes();
+  let localTotalMin = (utcTotalMin + offsetMin) % (24 * 60);
+  if (localTotalMin < 0) localTotalMin += 24 * 60;
+
+  const [h, m] = morningSummaryTime.split(":").map(Number);
+  if (isNaN(h) || isNaN(m)) return false;
+  const targetMin = h * 60 + m;
+
+  return localTotalMin >= targetMin;
+}
+
+async function sendMorningSummary(
+  chatId: number,
+  rules: AlertRule[],
+  alertHistory: AlertEvent[],
+  morningSummaryTime: string,
+  bot: BotLike,
+): Promise<void> {
+  const now = Date.now();
+  const cutoff = now - 24 * 60 * 60 * 1000;
+
+  const uniqueTokens = new Map<string, TokenInfo>();
+  for (const rule of rules) {
+    if (!uniqueTokens.has(rule.token.symbol)) {
+      uniqueTokens.set(rule.token.symbol, rule.token);
+    }
+  }
+
+  let tokensSection = "";
+  if (uniqueTokens.size > 0) {
+    tokensSection = "\n📊 <b>Prices (24h)</b>\n";
+    for (const token of uniqueTokens.values()) {
+      const prices = await fetchMockPrice(token);
+      const mock24h = ((Math.random() - 0.5) * 20);
+      const sign24h = mock24h >= 0 ? "+" : "";
+      tokensSection += `• <b>${token.symbol}</b> — $${prices.price.toFixed(4)}  (24h: ${sign24h}${mock24h.toFixed(1)}%)\n`;
+    }
+  }
+
+  const overnightEvents = alertHistory.filter((e) => e.timestamp >= cutoff);
+  let triggersSection = "";
+  if (overnightEvents.length > 0) {
+    triggersSection = `\n🔔 <b>Triggers overnight (last 24h):</b>\n`;
+    for (const e of overnightEvents) {
+      triggersSection += `• <b>${e.token.symbol}</b> ${e.triggerDescription} — $${e.currentPrice.toFixed(4)}\n`;
+    }
+  } else {
+    triggersSection = "\n✅ <b>No alerts triggered overnight.</b>\n";
+  }
+
+  const today = now;
+  const dateStr = new Date(today).toISOString().split("T")[0];
+
+  const message = `🌅 <b>Good morning!</b> — ${dateStr}${tokensSection}${triggersSection}`;
+
+  bot.api
+    .sendMessage(chatId, message, { parse_mode: "HTML" })
+    .catch(() => {
+      console.error(`Failed to send morning summary to chat ${chatId}`);
+    });
 }
 
 function isInQuietHours(utcNow: Date, quietHours: QuietHoursConfig): boolean {
@@ -346,6 +419,9 @@ interface UserRules {
   chatId: number;
   rules: AlertRule[];
   quietHours: QuietHoursConfig;
+  morningSummary: boolean;
+  morningSummaryTime: string;
+  alertHistory: AlertEvent[];
 }
 
 interface AlertStore {
@@ -377,6 +453,27 @@ export function startWorker(
         if (acc && acc.length > 0 && !isInQuietHours(new Date(), user.quietHours)) {
           deliverAccumulatedAlerts(user.chatId, [...acc], bot, alertStore);
           accumulatedAlerts.delete(user.chatId);
+        }
+      }
+
+      for (const user of users) {
+        if (
+          user.morningSummary &&
+          shouldSendMorningSummary(
+            user.quietHours.timezone,
+            user.morningSummaryTime,
+            morningSummarySent.get(user.chatId),
+          )
+        ) {
+          const today = new Date().toISOString().split("T")[0];
+          morningSummarySent.set(user.chatId, today);
+          sendMorningSummary(
+            user.chatId,
+            user.rules,
+            user.alertHistory,
+            user.morningSummaryTime,
+            bot,
+          );
         }
       }
 

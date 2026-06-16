@@ -41,9 +41,11 @@ interface SessionData {
   fiat: string;
   timezone: string;
   morningSummary: boolean;
+  morningSummaryTime: string;
   selectedToken?: TokenInfo;
   pendingRule?: { token: TokenInfo; type: string };
   pendingQuietSetting?: "start" | "end";
+  pendingMorningTime?: boolean;
   watchlist: AlertRule[];
   alertHistory: AlertEvent[];
   quietHoursStart: string;
@@ -59,7 +61,7 @@ const bot = new Bot<MyContext>(BOT_TOKEN);
 
 bot.use(session({
   initial(): SessionData {
-    return { fiat: "USD", timezone: "UTC", morningSummary: true, watchlist: [], alertHistory: [], quietHoursStart: "23:00", quietHoursEnd: "07:00", quietHoursEnabled: true, quietHoursImmediate: false, accumulatedAlerts: [] };
+    return { fiat: "USD", timezone: "UTC", morningSummary: true, morningSummaryTime: "09:00", watchlist: [], alertHistory: [], quietHoursStart: "23:00", quietHoursEnd: "07:00", quietHoursEnabled: true, quietHoursImmediate: false, accumulatedAlerts: [] };
   },
 }));
 
@@ -199,14 +201,57 @@ bot.callbackQuery(/^morning_summary:(yes|no)$/, async (ctx) => {
   const enabled = ctx.match[1] === "yes";
   ctx.session.morningSummary = enabled;
 
+  if (!enabled) {
+    const menu = new InlineKeyboard()
+      .text("🚀 Set Alert", "menu:set_alert").row()
+      .text("📊 My Alerts", "menu:my_alerts").row()
+      .text("ℹ️ Help", "menu:help");
+
+    await ctx.editMessageText(
+      "Morning summary disabled. ✅\n\nUse the menu below to get started.",
+      { reply_markup: menu },
+    );
+    await ctx.answerCallbackQuery();
+    return;
+  }
+
+  const keyboard = new InlineKeyboard()
+    .text("07:00", "morning_time:07:00")
+    .text("08:00", "morning_time:08:00")
+    .text("09:00", "morning_time:09:00")
+    .text("10:00", "morning_time:10:00").row()
+    .text("✏️ Custom...", "morning_time:custom");
+
+  await ctx.editMessageText(
+    `You'll receive a daily morning summary at <b>${ctx.session.morningSummaryTime}</b> (default).\n\nSelect a time or enter a custom one:`,
+    { reply_markup: keyboard, parse_mode: "HTML" },
+  );
+  await ctx.answerCallbackQuery();
+});
+
+bot.callbackQuery(/^morning_time:(.+)$/, async (ctx) => {
+  const timeValue = ctx.match[1];
+
+  if (timeValue === "custom") {
+    await ctx.editMessageText(
+      "Please enter your preferred morning summary time in HH:MM format (24-hour).\n\nExample: 08:30\n\n(Send /cancel to abort)",
+    );
+    ctx.session.pendingMorningTime = true;
+    await ctx.answerCallbackQuery();
+    return;
+  }
+
+  ctx.session.morningSummaryTime = timeValue;
+  ctx.session.pendingMorningTime = undefined;
+
   const menu = new InlineKeyboard()
     .text("🚀 Set Alert", "menu:set_alert").row()
     .text("📊 My Alerts", "menu:my_alerts").row()
     .text("ℹ️ Help", "menu:help");
 
   await ctx.editMessageText(
-    `Morning summary ${enabled ? "enabled" : "disabled"}. ✅\n\nUse the menu below to get started.`,
-    { reply_markup: menu },
+    `Morning summary time set to <b>${timeValue}</b>. ✅\n\nUse the menu below to get started.`,
+    { reply_markup: menu, parse_mode: "HTML" },
   );
   await ctx.answerCallbackQuery();
 });
@@ -218,6 +263,7 @@ bot.command("help", async (ctx) => {
     "/add <symbol|address> — Search for a token to add to your watchlist\n" +
     "/list — View your watchlist\n" +
     "/quiet — Configure quiet hours for alert suppression\n" +
+    "/morning — Configure your daily morning summary\n" +
     "/help — Show this help message"
   );
 });
@@ -276,6 +322,108 @@ bot.command("stats", async (ctx) => {
   }
 
   await ctx.reply(message, { parse_mode: "HTML" });
+});
+
+bot.command("morning", async (ctx) => {
+  const s = ctx.session;
+  const keyboard = new InlineKeyboard();
+
+  if (s.morningSummary) {
+    keyboard.text("🔕 Disable morning summary", "morning:toggle").row();
+  } else {
+    keyboard.text("🔔 Enable morning summary", "morning:toggle").row();
+  }
+
+  keyboard
+    .text(`⏰ Time: ${s.morningSummaryTime}`, "morning:set_time");
+
+  const label = s.morningSummary
+    ? `ON — daily at ${s.morningSummaryTime}`
+    : "OFF";
+
+  await ctx.reply(
+    `🌅 <b>Morning Summary Settings</b>\n\nStatus: ${label}\n\nUse the buttons below to configure:`,
+    { reply_markup: keyboard, parse_mode: "HTML" },
+  );
+});
+
+bot.callbackQuery("morning:toggle", async (ctx) => {
+  ctx.session.morningSummary = !ctx.session.morningSummary;
+  await ctx.answerCallbackQuery({
+    text: `Morning summary ${ctx.session.morningSummary ? "enabled" : "disabled"}.`,
+  });
+
+  const s = ctx.session;
+  const keyboard = new InlineKeyboard();
+
+  if (s.morningSummary) {
+    keyboard.text("🔕 Disable morning summary", "morning:toggle").row();
+  } else {
+    keyboard.text("🔔 Enable morning summary", "morning:toggle").row();
+  }
+
+  keyboard.text(`⏰ Time: ${s.morningSummaryTime}`, "morning:set_time");
+
+  const label = s.morningSummary
+    ? `ON — daily at ${s.morningSummaryTime}`
+    : "OFF";
+
+  await ctx.editMessageText(
+    `🌅 <b>Morning Summary Settings</b>\n\nStatus: ${label}\n\nUse the buttons below to configure:`,
+    { reply_markup: keyboard, parse_mode: "HTML" },
+  );
+});
+
+bot.callbackQuery("morning:set_time", async (ctx) => {
+  const keyboard = new InlineKeyboard()
+    .text("07:00", "morning_set_time:07:00")
+    .text("08:00", "morning_set_time:08:00")
+    .text("09:00", "morning_set_time:09:00")
+    .text("10:00", "morning_set_time:10:00").row()
+    .text("✏️ Custom...", "morning_set_time:custom");
+
+  await ctx.editMessageText(
+    `Current morning summary time: <b>${ctx.session.morningSummaryTime}</b>\n\nSelect a new time or enter a custom one:`,
+    { reply_markup: keyboard, parse_mode: "HTML" },
+  );
+  await ctx.answerCallbackQuery();
+});
+
+bot.callbackQuery(/^morning_set_time:(.+)$/, async (ctx) => {
+  const timeValue = ctx.match[1];
+
+  if (timeValue === "custom") {
+    await ctx.editMessageText(
+      "Please enter your preferred morning summary time in HH:MM format (24-hour).\n\nExample: 08:30\n\n(Send /cancel to abort)",
+    );
+    ctx.session.pendingMorningTime = true;
+    await ctx.answerCallbackQuery();
+    return;
+  }
+
+  ctx.session.morningSummaryTime = timeValue;
+  ctx.session.pendingMorningTime = undefined;
+
+  const s = ctx.session;
+  const keyboard = new InlineKeyboard();
+
+  if (s.morningSummary) {
+    keyboard.text("🔕 Disable morning summary", "morning:toggle").row();
+  } else {
+    keyboard.text("🔔 Enable morning summary", "morning:toggle").row();
+  }
+
+  keyboard.text(`⏰ Time: ${s.morningSummaryTime}`, "morning:set_time");
+
+  const label = s.morningSummary
+    ? `ON — daily at ${s.morningSummaryTime}`
+    : "OFF";
+
+  await ctx.editMessageText(
+    `🌅 <b>Morning Summary Settings</b>\n\nStatus: ${label}\n\nUse the buttons below to configure:`,
+    { reply_markup: keyboard, parse_mode: "HTML" },
+  );
+  await ctx.answerCallbackQuery();
 });
 
 bot.command("quiet", async (ctx) => {
@@ -635,6 +783,44 @@ bot.on("message:text", async (ctx, next) => {
     return;
   }
 
+  if (ctx.session.pendingMorningTime) {
+    const text = ctx.message.text.trim();
+
+    if (text === "/cancel") {
+      ctx.session.pendingMorningTime = false;
+      await ctx.reply("Morning summary time configuration cancelled.");
+      return;
+    }
+
+    const match = text.match(/^(\d{1,2}):(\d{2})$/);
+    if (!match) {
+      await ctx.reply("❌ Invalid format. Please enter the time as HH:MM (e.g., 08:30).\n\n(Send /cancel to abort)");
+      return;
+    }
+
+    const hours = parseInt(match[1], 10);
+    const minutes = parseInt(match[2], 10);
+    if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59) {
+      await ctx.reply("❌ Invalid time. Hours must be 0-23 and minutes 0-59.\n\n(Send /cancel to abort)");
+      return;
+    }
+
+    const formatted = `${hours.toString().padStart(2, "0")}:${minutes.toString().padStart(2, "0")}`;
+    ctx.session.morningSummaryTime = formatted;
+    ctx.session.pendingMorningTime = false;
+
+    const menu = new InlineKeyboard()
+      .text("🚀 Set Alert", "menu:set_alert").row()
+      .text("📊 My Alerts", "menu:my_alerts").row()
+      .text("ℹ️ Help", "menu:help");
+
+    await ctx.reply(
+      `Morning summary time set to <b>${formatted}</b>. ✅\n\nUse the menu below to get started.`,
+      { reply_markup: menu, parse_mode: "HTML" },
+    );
+    return;
+  }
+
   const pending = ctx.session.pendingRule;
   if (!pending) {
     await next();
@@ -714,7 +900,7 @@ bot.start({
     startWorker(
       bot,
       () => {
-        const result: { chatId: number; rules: WorkerAlertRule[]; quietHours: { enabled: boolean; start: string; end: string; immediate: boolean; timezone: string } }[] = [];
+        const result: { chatId: number; rules: WorkerAlertRule[]; quietHours: { enabled: boolean; start: string; end: string; immediate: boolean; timezone: string }; morningSummary: boolean; morningSummaryTime: string; alertHistory: WorkerAlertEvent[] }[] = [];
         for (const [chatId, session] of userSessions) {
           const rules = buildWatchlistRulesFromSession(session);
           if (rules.length > 0) {
@@ -728,6 +914,9 @@ bot.start({
                 immediate: session.quietHoursImmediate,
                 timezone: session.timezone,
               },
+              morningSummary: session.morningSummary,
+              morningSummaryTime: session.morningSummaryTime,
+              alertHistory: session.alertHistory,
             });
           }
         }
