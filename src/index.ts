@@ -1,6 +1,7 @@
 import { Bot, Context, GrammyError, HttpError, InlineKeyboard, session, SessionFlavor } from "grammy";
 import { startWorker, AlertRule as WorkerAlertRule, AlertEvent as WorkerAlertEvent } from "./worker";
 import { parseNumber } from "./parse";
+import { connectRedis } from "./redis";
 
 const BOT_TOKEN = process.env.BOT_TOKEN;
 if (!BOT_TOKEN) {
@@ -705,8 +706,10 @@ bot.catch((err) => {
 });
 
 bot.start({
-  onStart: () => {
+  onStart: async () => {
     console.log("Bot is running...");
+
+    await connectRedis();
 
     startWorker(
       bot,

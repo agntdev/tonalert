@@ -1,4 +1,12 @@
 import { InlineKeyboard } from "grammy";
+import {
+  getCachedPrice,
+  setCachedPrice,
+  getCooldown,
+  setCooldown,
+  acquireJobLock,
+  releaseJobLock,
+} from "./redis";
 
 interface BotLike {
   api: {
@@ -147,13 +155,6 @@ async function sendDailyDigest(
 const COOLDOWN_MS = 3_600_000;
 const RESET_MARGIN = 0.01;
 
-interface CooldownEntry {
-  lastTriggered: number;
-  triggerPrice: number;
-}
-
-const cooldowns = new Map<string, CooldownEntry>();
-
 const accumulatedAlerts = new Map<number, AlertEvent[]>();
 
 function parseTimezoneOffsetMinutes(tz: string): number {
@@ -219,8 +220,6 @@ function getCooldownKey(chatId: number, tokenSymbol: string, ruleType: string): 
   return `${chatId}:${tokenSymbol}:${ruleType}`;
 }
 
-const priceCache = new Map<string, { price: number; previousPrice: number; timestamp: number }>();
-
 function basePrice(token: TokenInfo): number {
   switch (token.symbol) {
     case "TON": return 2.50;
@@ -233,38 +232,35 @@ function basePrice(token: TokenInfo): number {
   }
 }
 
-function fetchMockPrice(token: TokenInfo): number {
+async function fetchMockPrice(token: TokenInfo): Promise<{ price: number; previousPrice: number }> {
   const key = token.symbol;
-  const cached = priceCache.get(key);
+  const cached = await getCachedPrice(key);
   const now = Date.now();
-  if (cached && now - cached.timestamp < 60_000) return cached.price;
+
+  if (cached && now - cached.timestamp < 60_000) {
+    return { price: cached.price, previousPrice: cached.previousPrice };
+  }
 
   const prev = cached?.price ?? basePrice(token);
   const volatility = basePrice(token) * 0.03;
   const change = (Math.random() - 0.5) * 2 * volatility;
   const newPrice = Math.max(0.000001, +(prev + change).toFixed(6));
 
-  priceCache.set(key, {
+  await setCachedPrice(key, {
     price: newPrice,
     previousPrice: prev,
     timestamp: now,
   });
 
-  return newPrice;
+  return { price: newPrice, previousPrice: prev };
 }
 
-function getPreviousPrice(token: TokenInfo): number {
-  const cached = priceCache.get(token.symbol);
-  return cached?.previousPrice ?? basePrice(token);
-}
-
-function evaluateRule(rule: AlertRule, currentPrice: number): {
+function evaluateRule(rule: AlertRule, currentPrice: number, previousPrice: number): {
   triggered: boolean;
   description: string;
   percentChange: number;
   baselinePrice: number;
 } | null {
-  const previousPrice = getPreviousPrice(rule.token);
   const percentChange = ((currentPrice - previousPrice) / previousPrice) * 100;
 
   switch (rule.type) {
@@ -310,47 +306,35 @@ function evaluateRule(rule: AlertRule, currentPrice: number): {
   }
 }
 
-function shouldSuppressRule(
+async function shouldSuppressRule(
   key: string,
   rule: AlertRule,
   currentPrice: number,
   percentChange: number,
-): boolean {
-  const entry = cooldowns.get(key);
-  if (!entry) return false;
+): Promise<boolean> {
+  const lastTriggered = await getCooldown(key);
+  if (!lastTriggered) return false;
 
   const now = Date.now();
-  if (now - entry.lastTriggered > COOLDOWN_MS) {
-    cooldowns.delete(key);
-    return false;
-  }
+  if (now - lastTriggered > COOLDOWN_MS) return false;
 
   switch (rule.type) {
     case "price_below": {
       const threshold = rule.threshold ?? basePrice(rule.token) * 0.95;
       const resetPrice = threshold * (1 - RESET_MARGIN);
-      if (currentPrice <= resetPrice) {
-        cooldowns.delete(key);
-        return false;
-      }
+      if (currentPrice <= resetPrice) return false;
       break;
     }
     case "price_above": {
       const threshold = rule.threshold ?? basePrice(rule.token) * 1.05;
       const resetPrice = threshold * (1 + RESET_MARGIN);
-      if (currentPrice >= resetPrice) {
-        cooldowns.delete(key);
-        return false;
-      }
+      if (currentPrice >= resetPrice) return false;
       break;
     }
     case "percent_move": {
       const pctThreshold = rule.percentThreshold ?? 5;
       const resetThreshold = pctThreshold + RESET_MARGIN * 100;
-      if (Math.abs(percentChange) >= resetThreshold) {
-        cooldowns.delete(key);
-        return false;
-      }
+      if (Math.abs(percentChange) >= resetThreshold) return false;
       break;
     }
   }
@@ -375,99 +359,116 @@ export function startWorker(
   digestConfig?: DigestConfig,
 ): NodeJS.Timeout {
   const evaluate = async () => {
-    const users = getUserRules();
+    const lockAcquired = await acquireJobLock("price-evaluator", 55_000);
+    if (!lockAcquired) return;
 
-    if (digestConfig && shouldSendDigest(digestConfig)) {
-      const totalUsers = digestConfig.getTotalUsers
-        ? digestConfig.getTotalUsers()
-        : users.length;
-      sendDailyDigest(bot, digestConfig, totalUsers);
-    }
+    try {
+      const users = getUserRules();
 
-    for (const user of users) {
-      const acc = accumulatedAlerts.get(user.chatId);
-      if (acc && acc.length > 0 && !isInQuietHours(new Date(), user.quietHours)) {
-        deliverAccumulatedAlerts(user.chatId, [...acc], bot, alertStore);
-        accumulatedAlerts.delete(user.chatId);
+      if (digestConfig && shouldSendDigest(digestConfig)) {
+        const totalUsers = digestConfig.getTotalUsers
+          ? digestConfig.getTotalUsers()
+          : users.length;
+        sendDailyDigest(bot, digestConfig, totalUsers);
       }
-    }
 
-    if (users.length === 0) return;
-
-    const evaluatedTokens = new Map<string, number>();
-    const getPrice = (token: TokenInfo): number => {
-      const key = token.symbol;
-      if (!evaluatedTokens.has(key)) {
-        evaluatedTokens.set(key, fetchMockPrice(token));
-      }
-      return evaluatedTokens.get(key)!;
-    };
-
-    for (const user of users) {
-      for (const rule of user.rules) {
-        const currentPrice = getPrice(rule.token);
-        const result = evaluateRule(rule, currentPrice);
-        if (!result) continue;
-
-        const cooldownKey = getCooldownKey(user.chatId, rule.token.symbol, rule.type);
-        if (shouldSuppressRule(cooldownKey, rule, currentPrice, result.percentChange)) continue;
-
-        const previousPrice = getPreviousPrice(rule.token);
-        const percentLabel = result.percentChange >= 0
-          ? `+${result.percentChange.toFixed(1)}%`
-          : `${result.percentChange.toFixed(1)}%`;
-
-        let triggerLine: string;
-        if (rule.type === "percent_move") {
-          triggerLine = `Trigger: ≥${rule.percentThreshold ?? 5}% in 1h`;
-        } else {
-          const threshold = rule.threshold ?? (rule.type === "price_below"
-            ? basePrice(rule.token) * 0.95
-            : basePrice(rule.token) * 1.05);
-          triggerLine = `Trigger: price ${rule.type === "price_below" ? "≤" : "≥"} $${threshold.toFixed(4)}`;
+      for (const user of users) {
+        const acc = accumulatedAlerts.get(user.chatId);
+        if (acc && acc.length > 0 && !isInQuietHours(new Date(), user.quietHours)) {
+          deliverAccumulatedAlerts(user.chatId, [...acc], bot, alertStore);
+          accumulatedAlerts.delete(user.chatId);
         }
+      }
 
-        const message = [
-          `${rule.token.symbol} ${result.description} — now $${currentPrice.toFixed(4)} (${percentLabel} since last check).`,
-          triggerLine,
-        ].join("\n");
+      if (users.length === 0) return;
 
-        const keyboard = new InlineKeyboard()
-          .text("Price now", `price_now:${rule.token.symbol}`).row()
-          .text("Snooze 1h", `snooze:${rule.token.symbol}:${rule.type}`).row()
-          .text("Disable rule", `disable:${rule.token.symbol}:${rule.type}`);
-
-        const alertEvent: AlertEvent = {
-          timestamp: Date.now(),
-          token: rule.token,
-          ruleType: rule.type,
-          triggerDescription: result.description,
-          currentPrice,
-          baselinePrice: result.baselinePrice,
-          percentChange: result.percentChange,
-          delivered: true,
-        };
-
-        const isQuiet = isInQuietHours(new Date(), user.quietHours);
-
-        if (isQuiet) {
-          alertEvent.delivered = false;
-          const acc = accumulatedAlerts.get(user.chatId) || [];
-          acc.push(alertEvent);
-          accumulatedAlerts.set(user.chatId, acc);
-        } else {
-          try {
-            await bot.api.sendMessage(user.chatId, message, { reply_markup: keyboard });
-          } catch {
-            console.error(`Failed to send alert to chat ${user.chatId}`);
+      const uniqueTokens = new Map<string, TokenInfo>();
+      for (const user of users) {
+        for (const rule of user.rules) {
+          if (!uniqueTokens.has(rule.token.symbol)) {
+            uniqueTokens.set(rule.token.symbol, rule.token);
           }
         }
-
-        cooldowns.set(cooldownKey, { lastTriggered: Date.now(), triggerPrice: currentPrice });
-
-        alertStore.addEvent(user.chatId, alertEvent);
-        recordAlertTimestamp(alertEvent.timestamp);
       }
+
+      const tokenPrices = new Map<string, { price: number; previousPrice: number }>();
+      for (const token of uniqueTokens.values()) {
+        const prices = await fetchMockPrice(token);
+        tokenPrices.set(token.symbol, prices);
+      }
+
+      for (const user of users) {
+        for (const rule of user.rules) {
+          const prices = tokenPrices.get(rule.token.symbol);
+          if (!prices) continue;
+
+          const currentPrice = prices.price;
+          const previousPrice = prices.previousPrice;
+
+          const result = evaluateRule(rule, currentPrice, previousPrice);
+          if (!result) continue;
+
+          const cooldownKey = getCooldownKey(user.chatId, rule.token.symbol, rule.type);
+          if (await shouldSuppressRule(cooldownKey, rule, currentPrice, result.percentChange)) continue;
+
+          const percentLabel = result.percentChange >= 0
+            ? `+${result.percentChange.toFixed(1)}%`
+            : `${result.percentChange.toFixed(1)}%`;
+
+          let triggerLine: string;
+          if (rule.type === "percent_move") {
+            triggerLine = `Trigger: ≥${rule.percentThreshold ?? 5}% in 1h`;
+          } else {
+            const threshold = rule.threshold ?? (rule.type === "price_below"
+              ? basePrice(rule.token) * 0.95
+              : basePrice(rule.token) * 1.05);
+            triggerLine = `Trigger: price ${rule.type === "price_below" ? "≤" : "≥"} $${threshold.toFixed(4)}`;
+          }
+
+          const message = [
+            `${rule.token.symbol} ${result.description} — now $${currentPrice.toFixed(4)} (${percentLabel} since last check).`,
+            triggerLine,
+          ].join("\n");
+
+          const keyboard = new InlineKeyboard()
+            .text("Price now", `price_now:${rule.token.symbol}`).row()
+            .text("Snooze 1h", `snooze:${rule.token.symbol}:${rule.type}`).row()
+            .text("Disable rule", `disable:${rule.token.symbol}:${rule.type}`);
+
+          const alertEvent: AlertEvent = {
+            timestamp: Date.now(),
+            token: rule.token,
+            ruleType: rule.type,
+            triggerDescription: result.description,
+            currentPrice,
+            baselinePrice: result.baselinePrice,
+            percentChange: result.percentChange,
+            delivered: true,
+          };
+
+          const isQuiet = isInQuietHours(new Date(), user.quietHours);
+
+          if (isQuiet) {
+            alertEvent.delivered = false;
+            const acc = accumulatedAlerts.get(user.chatId) || [];
+            acc.push(alertEvent);
+            accumulatedAlerts.set(user.chatId, acc);
+          } else {
+            try {
+              await bot.api.sendMessage(user.chatId, message, { reply_markup: keyboard });
+            } catch {
+              console.error(`Failed to send alert to chat ${user.chatId}`);
+            }
+          }
+
+          await setCooldown(cooldownKey, Date.now(), COOLDOWN_MS);
+
+          alertStore.addEvent(user.chatId, alertEvent);
+          recordAlertTimestamp(alertEvent.timestamp);
+        }
+      }
+    } finally {
+      await releaseJobLock("price-evaluator");
     }
   };
 
