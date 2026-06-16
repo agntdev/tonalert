@@ -38,6 +38,112 @@ interface QuietHoursConfig {
   timezone: string;
 }
 
+export interface DigestConfig {
+  ownerId: number;
+  scheduleHour?: number;
+  getTotalUsers?: () => number;
+  onAdminNotify?: (message: string) => void;
+}
+
+interface OutageEvent {
+  timestamp: number;
+  message: string;
+}
+
+const globalAlertTimestamps: number[] = [];
+const globalOutageEvents: OutageEvent[] = [];
+let lastDigestDate = "";
+
+function recordAlertTimestamp(timestamp: number): void {
+  globalAlertTimestamps.push(timestamp);
+  const cutoff = Date.now() - 48 * 60 * 60 * 1000;
+  while (globalAlertTimestamps.length > 0 && globalAlertTimestamps[0] < cutoff) {
+    globalAlertTimestamps.shift();
+  }
+}
+
+export function recordOutage(message: string): void {
+  globalOutageEvents.push({ timestamp: Date.now(), message });
+  const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
+  while (globalOutageEvents.length > 0 && globalOutageEvents[0].timestamp < cutoff) {
+    globalOutageEvents.shift();
+  }
+}
+
+function detectAlertSpikes(): { spikeDetected: boolean; lastHourCount: number; avgHourly24h: number } {
+  const now = Date.now();
+  const lastHourCutoff = now - 60 * 60 * 1000;
+  const last24hCutoff = now - 24 * 60 * 60 * 1000;
+
+  const lastHourCount = globalAlertTimestamps.filter((t) => t >= lastHourCutoff).length;
+  const last24hCount = globalAlertTimestamps.filter((t) => t >= last24hCutoff).length;
+  const avgHourly24h = last24hCount / 24;
+
+  const spikeDetected =
+    lastHourCount > 0 && avgHourly24h > 0 && lastHourCount >= avgHourly24h * 3;
+
+  return { spikeDetected, lastHourCount, avgHourly24h };
+}
+
+function shouldSendDigest(config: DigestConfig): boolean {
+  const now = new Date();
+  const scheduleHour = config.scheduleHour ?? 9;
+
+  if (now.getUTCHours() < scheduleHour) return false;
+
+  const today = now.toISOString().split("T")[0];
+  if (lastDigestDate === today) return false;
+
+  return true;
+}
+
+async function sendDailyDigest(
+  bot: BotLike,
+  config: DigestConfig,
+  totalUsers: number,
+): Promise<void> {
+  const now = new Date();
+  const dateStr = now.toISOString().split("T")[0];
+
+  const { spikeDetected, lastHourCount, avgHourly24h } = detectAlertSpikes();
+
+  const outages24h = globalOutageEvents.filter(
+    (o) => o.timestamp >= Date.now() - 24 * 60 * 60 * 1000,
+  );
+
+  const totalAlerts24h = globalAlertTimestamps.filter(
+    (t) => t >= Date.now() - 24 * 60 * 60 * 1000,
+  ).length;
+
+  let message = `<b>📊 Daily Digest</b> — ${dateStr}\n\n`;
+  message += `<b>Total users:</b> ${totalUsers}\n`;
+  message += `<b>Alerts (last 24h):</b> ${totalAlerts24h}\n`;
+
+  if (spikeDetected) {
+    message += `\n⚠️ <b>Alert spike detected!</b>\n`;
+    message += `Last hour: ${lastHourCount} alerts (avg hourly: ${avgHourly24h.toFixed(1)})\n`;
+  } else {
+    message += `\nNo significant alert spikes.\n`;
+  }
+
+  if (outages24h.length > 0) {
+    message += `\n🔴 <b>Data-source outages (last 24h):</b>\n`;
+    for (const outage of outages24h) {
+      message += `• ${outage.message}\n`;
+    }
+  } else {
+    message += `\n✅ No data-source outages reported.\n`;
+  }
+
+  lastDigestDate = dateStr;
+
+  bot.api
+    .sendMessage(config.ownerId, message, { parse_mode: "HTML" })
+    .catch(() => {
+      console.error("Failed to send daily digest to owner");
+    });
+}
+
 const COOLDOWN_MS = 3_600_000;
 const RESET_MARGIN = 0.01;
 
@@ -266,9 +372,17 @@ export function startWorker(
   bot: BotLike,
   getUserRules: () => UserRules[],
   alertStore: AlertStore,
+  digestConfig?: DigestConfig,
 ): NodeJS.Timeout {
   const evaluate = async () => {
     const users = getUserRules();
+
+    if (digestConfig && shouldSendDigest(digestConfig)) {
+      const totalUsers = digestConfig.getTotalUsers
+        ? digestConfig.getTotalUsers()
+        : users.length;
+      sendDailyDigest(bot, digestConfig, totalUsers);
+    }
 
     for (const user of users) {
       const acc = accumulatedAlerts.get(user.chatId);
@@ -352,6 +466,7 @@ export function startWorker(
         cooldowns.set(cooldownKey, { lastTriggered: Date.now(), triggerPrice: currentPrice });
 
         alertStore.addEvent(user.chatId, alertEvent);
+        recordAlertTimestamp(alertEvent.timestamp);
       }
     }
   };

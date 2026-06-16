@@ -747,6 +747,7 @@ bot.start({
           }
         },
       },
+      { ownerId: OWNER_ID, getTotalUsers: () => userSessions.size },
     );
   },
 });
