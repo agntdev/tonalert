@@ -30,6 +30,14 @@ export interface AlertEvent {
   delivered: boolean;
 }
 
+interface QuietHoursConfig {
+  enabled: boolean;
+  start: string;
+  end: string;
+  immediate: boolean;
+  timezone: string;
+}
+
 const COOLDOWN_MS = 3_600_000;
 const RESET_MARGIN = 0.01;
 
@@ -39,6 +47,67 @@ interface CooldownEntry {
 }
 
 const cooldowns = new Map<string, CooldownEntry>();
+
+const accumulatedAlerts = new Map<number, AlertEvent[]>();
+
+function parseTimezoneOffsetMinutes(tz: string): number {
+  if (tz === "UTC") return 0;
+  const match = tz.match(/^UTC([+-])(\d+)$/);
+  if (!match) return 0;
+  const sign = match[1] === "-" ? -1 : 1;
+  const hours = parseInt(match[2], 10);
+  return sign * hours * 60;
+}
+
+function parseTimeToMinutes(time: string): number {
+  const [h, m] = time.split(":").map(Number);
+  return h * 60 + m;
+}
+
+function isInQuietHours(utcNow: Date, quietHours: QuietHoursConfig): boolean {
+  if (!quietHours.enabled || quietHours.immediate) return false;
+
+  const offsetMin = parseTimezoneOffsetMinutes(quietHours.timezone);
+  const utcTotalMin = utcNow.getUTCHours() * 60 + utcNow.getUTCMinutes();
+  let localTotalMin = (utcTotalMin + offsetMin) % (24 * 60);
+  if (localTotalMin < 0) localTotalMin += 24 * 60;
+
+  const startMin = parseTimeToMinutes(quietHours.start);
+  const endMin = parseTimeToMinutes(quietHours.end);
+
+  if (startMin <= endMin) {
+    return localTotalMin >= startMin && localTotalMin < endMin;
+  } else {
+    return localTotalMin >= startMin || localTotalMin < endMin;
+  }
+}
+
+function deliverAccumulatedAlerts(
+  chatId: number,
+  events: AlertEvent[],
+  bot: BotLike,
+  alertStore: AlertStore,
+) {
+  if (events.length === 0) return;
+
+  const byToken = new Map<string, AlertEvent[]>();
+  for (const event of events) {
+    const key = event.token.symbol;
+    if (!byToken.has(key)) byToken.set(key, []);
+    byToken.get(key)!.push(event);
+  }
+
+  let message = "🌅 <b>Quiet hours ended — accumulated alerts</b>\n\n";
+  for (const [symbol, tokenEvents] of byToken) {
+    for (const e of tokenEvents) {
+      message += `• <b>${symbol}</b> ${e.triggerDescription} — $${e.currentPrice.toFixed(4)}\n`;
+    }
+  }
+
+  bot.api.sendMessage(chatId, message, { parse_mode: "HTML" }).catch(() => {
+    console.error(`Failed to send accumulated alerts to chat ${chatId}`);
+  });
+}
 
 function getCooldownKey(chatId: number, tokenSymbol: string, ruleType: string): string {
   return `${chatId}:${tokenSymbol}:${ruleType}`;
@@ -186,6 +255,7 @@ function shouldSuppressRule(
 interface UserRules {
   chatId: number;
   rules: AlertRule[];
+  quietHours: QuietHoursConfig;
 }
 
 interface AlertStore {
@@ -199,6 +269,15 @@ export function startWorker(
 ): NodeJS.Timeout {
   const evaluate = async () => {
     const users = getUserRules();
+
+    for (const user of users) {
+      const acc = accumulatedAlerts.get(user.chatId);
+      if (acc && acc.length > 0 && !isInQuietHours(new Date(), user.quietHours)) {
+        deliverAccumulatedAlerts(user.chatId, [...acc], bot, alertStore);
+        accumulatedAlerts.delete(user.chatId);
+      }
+    }
+
     if (users.length === 0) return;
 
     const evaluatedTokens = new Map<string, number>();
@@ -244,14 +323,6 @@ export function startWorker(
           .text("Snooze 1h", `snooze:${rule.token.symbol}:${rule.type}`).row()
           .text("Disable rule", `disable:${rule.token.symbol}:${rule.type}`);
 
-        try {
-          await bot.api.sendMessage(user.chatId, message, { reply_markup: keyboard });
-        } catch {
-          console.error(`Failed to send alert to chat ${user.chatId}`);
-        }
-
-        cooldowns.set(cooldownKey, { lastTriggered: Date.now(), triggerPrice: currentPrice });
-
         const alertEvent: AlertEvent = {
           timestamp: Date.now(),
           token: rule.token,
@@ -262,6 +333,23 @@ export function startWorker(
           percentChange: result.percentChange,
           delivered: true,
         };
+
+        const isQuiet = isInQuietHours(new Date(), user.quietHours);
+
+        if (isQuiet) {
+          alertEvent.delivered = false;
+          const acc = accumulatedAlerts.get(user.chatId) || [];
+          acc.push(alertEvent);
+          accumulatedAlerts.set(user.chatId, acc);
+        } else {
+          try {
+            await bot.api.sendMessage(user.chatId, message, { reply_markup: keyboard });
+          } catch {
+            console.error(`Failed to send alert to chat ${user.chatId}`);
+          }
+        }
+
+        cooldowns.set(cooldownKey, { lastTriggered: Date.now(), triggerPrice: currentPrice });
 
         alertStore.addEvent(user.chatId, alertEvent);
       }

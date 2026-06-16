@@ -14,5 +14,9 @@
   {
     "command": "list",
     "description": "View your watchlist with inline buttons for price check, edit, and remove"
+  },
+  {
+    "command": "quiet",
+    "description": "Configure quiet hours to suppress alerts during specified time window"
   }
 ]
