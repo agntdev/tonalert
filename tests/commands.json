@@ -18,5 +18,9 @@
   {
     "command": "quiet",
     "description": "Configure quiet hours to suppress alerts during specified time window"
+  },
+  {
+    "command": "export",
+    "description": "Export alert events as CSV since a specified date (owner only)"
   }
 ]

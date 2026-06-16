@@ -169,5 +169,33 @@
       { "expect": { "reply": "OFF" } },
       { "expect": { "reply_markup": { "inline_keyboard": [[{"text":"🔔 Enable quiet hours","callback_data":"quiet:toggle"}],[{"text":"⏰ Start: 23:00","callback_data":"quiet:set_start"}],[{"text":"🌅 End: 07:00","callback_data":"quiet:set_end"}],[{"text":"⚡ Immediate: OFF (tap to enable)","callback_data":"quiet:toggle_immediate"}]] } } }
     ]
+  },
+  {
+    "name": "/export by non-owner",
+    "steps": [
+      { "send": "/export" },
+      { "expect": { "reply": "This command is only available to the bot owner." } }
+    ]
+  },
+  {
+    "name": "/export without date",
+    "steps": [
+      { "send": "/export" },
+      { "expect": { "reply": "Please provide a date to filter alerts from." } }
+    ]
+  },
+  {
+    "name": "/export with invalid date format",
+    "steps": [
+      { "send": "/export abc" },
+      { "expect": { "reply": "Invalid date format." } }
+    ]
+  },
+  {
+    "name": "/export with valid date (no events)",
+    "steps": [
+      { "send": "/export 2026-01-01" },
+      { "expect": { "reply": "No alert events found since 2026-01-01." } }
+    ]
   }
 ]

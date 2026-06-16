@@ -1,4 +1,4 @@
-import { Bot, Context, GrammyError, HttpError, InlineKeyboard, session, SessionFlavor } from "grammy";
+import { Bot, Context, GrammyError, HttpError, InlineKeyboard, InputFile, session, SessionFlavor } from "grammy";
 import { startWorker, AlertRule as WorkerAlertRule, AlertEvent as WorkerAlertEvent } from "./worker";
 import { parseNumber } from "./parse";
 
@@ -6,6 +6,8 @@ const BOT_TOKEN = process.env.BOT_TOKEN;
 if (!BOT_TOKEN) {
   throw new Error("BOT_TOKEN environment variable is required");
 }
+
+const OWNER_ID = process.env.OWNER_ID ? parseInt(process.env.OWNER_ID, 10) : undefined;
 
 interface TokenInfo {
   symbol: string;
@@ -213,6 +215,88 @@ bot.command("help", async (ctx) => {
     "/list — View your watchlist\n" +
     "/quiet — Configure quiet hours for alert suppression\n" +
     "/help — Show this help message"
+  );
+});
+
+function escapeCsvField(field: string | number | boolean | undefined): string {
+  if (field === undefined || field === null) return "";
+  const str = String(field);
+  if (str.includes(",") || str.includes('"') || str.includes("\n")) {
+    return `"${str.replace(/"/g, '""')}"`;
+  }
+  return str;
+}
+
+function generateAlertCsv(events: AlertEvent[]): string {
+  const headers = [
+    "timestamp", "token_symbol", "token_name", "token_address",
+    "rule_type", "trigger_description", "current_price",
+    "baseline_price", "percent_change", "delivered",
+  ];
+  const rows = events.map((e) => [
+    new Date(e.timestamp).toISOString(),
+    e.token.symbol,
+    e.token.name,
+    e.token.address,
+    e.ruleType,
+    e.triggerDescription,
+    e.currentPrice,
+    e.baselinePrice ?? "",
+    e.percentChange ?? "",
+    e.delivered,
+  ].map(escapeCsvField).join(","));
+  return [headers.join(","), ...rows].join("\n");
+}
+
+bot.command("export", async (ctx) => {
+  if (OWNER_ID === undefined || ctx.from?.id !== OWNER_ID) {
+    await ctx.reply("This command is only available to the bot owner.");
+    return;
+  }
+
+  const input = ctx.match.trim();
+  if (!input) {
+    await ctx.reply(
+      "Please provide a date to filter alerts from.\n\nUsage: /export YYYY-MM-DD\nExample: /export 2026-06-01",
+    );
+    return;
+  }
+
+  const dateMatch = input.match(/^(?:since\s*=\s*)?(\d{4}-\d{2}-\d{2})$/);
+  if (!dateMatch) {
+    await ctx.reply(
+      "Invalid date format. Please use YYYY-MM-DD.\n\nUsage: /export YYYY-MM-DD\nExample: /export 2026-06-01",
+    );
+    return;
+  }
+
+  const sinceDate = new Date(dateMatch[1] + "T00:00:00.000Z");
+  if (isNaN(sinceDate.getTime())) {
+    await ctx.reply("Invalid date. Please use a valid YYYY-MM-DD date.");
+    return;
+  }
+
+  const allEvents: AlertEvent[] = [];
+  for (const [, session] of userSessions) {
+    for (const event of session.alertHistory) {
+      if (event.timestamp >= sinceDate.getTime()) {
+        allEvents.push(event);
+      }
+    }
+  }
+
+  if (allEvents.length === 0) {
+    await ctx.reply(`No alert events found since ${dateMatch[1]}.`);
+    return;
+  }
+
+  const csv = generateAlertCsv(allEvents);
+  const buf = Buffer.from(csv, "utf-8");
+  const filename = `tonalert-export-since-${dateMatch[1]}.csv`;
+
+  await ctx.replyWithDocument(
+    new InputFile(buf, filename),
+    { caption: `Exported ${allEvents.length} alert event(s) since ${dateMatch[1]}.` },
   );
 });
 
