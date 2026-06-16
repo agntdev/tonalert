@@ -1,4 +1,4 @@
-import { Bot, Context, GrammyError, HttpError, InlineKeyboard, session, SessionFlavor } from "grammy";
+import { Bot, Context, GrammyError, HttpError, InlineKeyboard, InputFile, session, SessionFlavor } from "grammy";
 import { startWorker, AlertRule as WorkerAlertRule, AlertEvent as WorkerAlertEvent } from "./worker";
 import { parseNumber } from "./parse";
 import { connectRedis } from "./redis";
@@ -276,6 +276,93 @@ bot.command("stats", async (ctx) => {
   }
 
   await ctx.reply(message, { parse_mode: "HTML" });
+});
+
+function csvEscape(value: string | number | boolean | undefined | null): string {
+  const s = value == null ? "" : String(value);
+  if (s.includes(",") || s.includes('"') || s.includes("\n")) {
+    return `"${s.replace(/"/g, '""')}"`;
+  }
+  return s;
+}
+
+bot.command("export", async (ctx) => {
+  if (ctx.from?.id !== OWNER_ID) {
+    await ctx.reply("This command is only available to the bot owner.");
+    return;
+  }
+
+  const dateArg = ctx.match.trim();
+  if (!dateArg) {
+    await ctx.reply(
+      "Usage: /export YYYY-MM-DD\n\nExports all alert events since the specified date as a CSV file.",
+    );
+    return;
+  }
+
+  const parsed = Date.parse(dateArg);
+  if (isNaN(parsed)) {
+    await ctx.reply(
+      "Invalid date format. Use YYYY-MM-DD (e.g., /export 2025-01-01).",
+    );
+    return;
+  }
+
+  const since = parsed;
+  const allEvents: { chatId: number; event: AlertEvent }[] = [];
+
+  for (const [chatId, session] of userSessions) {
+    for (const event of session.alertHistory) {
+      if (event.timestamp >= since) {
+        allEvents.push({ chatId, event });
+      }
+    }
+  }
+
+  allEvents.sort((a, b) => a.event.timestamp - b.event.timestamp);
+
+  if (allEvents.length === 0) {
+    await ctx.reply(`No alert events found since ${dateArg}.`);
+    return;
+  }
+
+  const headers = [
+    "timestamp",
+    "chat_id",
+    "token_symbol",
+    "token_name",
+    "token_address",
+    "rule_type",
+    "trigger_description",
+    "current_price",
+    "baseline_price",
+    "percent_change",
+    "delivered",
+  ];
+
+  const rows = allEvents.map(({ chatId, event }) =>
+    [
+      new Date(event.timestamp).toISOString(),
+      chatId,
+      event.token.symbol,
+      event.token.name,
+      event.token.address,
+      event.ruleType,
+      event.triggerDescription,
+      event.currentPrice,
+      event.baselinePrice ?? "",
+      event.percentChange ?? "",
+      event.delivered,
+    ].map(csvEscape).join(","),
+  );
+
+  const csv = [headers.join(","), ...rows].join("\n");
+  const filename = `alert_export_${dateArg}_to_${new Date().toISOString().split("T")[0]}.csv`;
+
+  await ctx.replyWithDocument(
+    new InputFile(Buffer.from(csv, "utf-8"), filename),
+    { caption: `Exported ${allEvents.length} alert event${allEvents.length !== 1 ? "s" : ""} since ${dateArg}.` },
+  );
 });
 
 bot.command("quiet", async (ctx) => {

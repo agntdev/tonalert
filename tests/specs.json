@@ -186,5 +186,33 @@
       { "expect": { "reply": "Active watch rules:" } },
       { "expect": { "reply": "Alerts fired (last 24h):" } }
     ]
+  },
+  {
+    "name": "/export by non-owner is denied",
+    "steps": [
+      { "send": "/export" },
+      { "expect": { "reply": "This command is only available to the bot owner." } }
+    ]
+  },
+  {
+    "name": "/export by owner without date shows usage",
+    "steps": [
+      { "send": "/export", "from": "owner" },
+      { "expect": { "reply": "Usage: /export YYYY-MM-DD" } }
+    ]
+  },
+  {
+    "name": "/export by owner with invalid date",
+    "steps": [
+      { "send": "/export invalid-date", "from": "owner" },
+      { "expect": { "reply": "Invalid date format." } }
+    ]
+  },
+  {
+    "name": "/export by owner with valid date no events",
+    "steps": [
+      { "send": "/export 2025-01-01", "from": "owner" },
+      { "expect": { "reply": "No alert events found since 2025-01-01." } }
+    ]
   }
 ]
