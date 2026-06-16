@@ -17,11 +17,19 @@ export interface PriceFetchOptions {
   maxDelayMs?: number;
 }
 
+export interface RateLimitConfig {
+  sourceName: string;
+  maxRequests: number;
+  windowMs: number;
+}
+
 const DEFAULT_OPTIONS: Required<PriceFetchOptions> = {
   maxRetries: 3,
   baseDelayMs: 1000,
   maxDelayMs: 10000,
 };
+
+import { checkRateLimit } from "./redis";
 
 async function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -62,12 +70,28 @@ export async function fetchPrice(
   fallbackSources: PriceSource[],
   onAdminNotify?: (message: string) => void,
 ): Promise<PriceResult | null> {
-  try {
-    const result = await retryWithBackoff(
-      () => primarySource.fetch(symbol),
-      `${primarySource.name}(${symbol})`,
+  const rateLimitConfigs: Record<string, RateLimitConfig> = {
+    CoinGecko: { sourceName: "coingecko", maxRequests: 25, windowMs: 60_000 },
+    DexScreener: { sourceName: "dexscreener", maxRequests: 15, windowMs: 60_000 },
+    TonSwap: { sourceName: "tonswap", maxRequests: 10, windowMs: 60_000 },
+  };
+
+  const checkAndFetch = async (source: PriceSource): Promise<PriceResult> => {
+    const rl = rateLimitConfigs[source.name];
+    if (rl) {
+      const { allowed } = await checkRateLimit(rl.sourceName, rl.maxRequests, rl.windowMs);
+      if (!allowed) {
+        throw new Error(`Rate limit exceeded for ${source.name}`);
+      }
+    }
+    return retryWithBackoff(
+      () => source.fetch(symbol),
+      `${source.name}(${symbol})`,
     );
-    return result;
+  };
+
+  try {
+    return await checkAndFetch(primarySource);
   } catch (primaryError) {
     console.error(
       `[price] Primary source ${primarySource.name} failed for ${symbol}:`,
@@ -85,11 +109,7 @@ export async function fetchPrice(
   for (const fallback of fallbackSources) {
     try {
       console.error(`[price] Trying fallback source ${fallback.name} for ${symbol}`);
-      const result = await retryWithBackoff(
-        () => fallback.fetch(symbol),
-        `${fallback.name}(${symbol})`,
-      );
-      return result;
+      return await checkAndFetch(fallback);
     } catch (fallbackError) {
       console.error(
         `[price] Fallback source ${fallback.name} failed for ${symbol}:`,
