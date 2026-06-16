@@ -7,6 +7,11 @@ if (!BOT_TOKEN) {
   throw new Error("BOT_TOKEN environment variable is required");
 }
 
+const OWNER_ID = process.env.OWNER_ID ? parseInt(process.env.OWNER_ID, 10) : undefined;
+if (!OWNER_ID) {
+  throw new Error("OWNER_ID environment variable is required");
+}
+
 interface TokenInfo {
   symbol: string;
   name: string;
@@ -214,6 +219,62 @@ bot.command("help", async (ctx) => {
     "/quiet — Configure quiet hours for alert suppression\n" +
     "/help — Show this help message"
   );
+});
+
+bot.command("stats", async (ctx) => {
+  if (ctx.from?.id !== OWNER_ID) {
+    await ctx.reply("This command is only available to the bot owner.");
+    return;
+  }
+
+  const now = Date.now();
+  const last24h = now - 24 * 60 * 60 * 1000;
+
+  const totalUsers = userSessions.size;
+
+  let activeWatchCount = 0;
+  const tokenWatchCounts = new Map<string, number>();
+  let alertsLast24h = 0;
+
+  for (const [, session] of userSessions) {
+    activeWatchCount += session.watchlist.length;
+
+    const seenTokens = new Set<string>();
+    for (const rule of session.watchlist) {
+      if (!seenTokens.has(rule.token.symbol)) {
+        seenTokens.add(rule.token.symbol);
+        tokenWatchCounts.set(
+          rule.token.symbol,
+          (tokenWatchCounts.get(rule.token.symbol) || 0) + 1,
+        );
+      }
+    }
+
+    for (const event of session.alertHistory) {
+      if (event.timestamp >= last24h) {
+        alertsLast24h++;
+      }
+    }
+  }
+
+  const topTokens = [...tokenWatchCounts.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 10);
+
+  let message = `<b>Bot Statistics</b>\n\n`;
+  message += `<b>Total users:</b> ${totalUsers}\n`;
+  message += `<b>Active watch rules:</b> ${activeWatchCount}\n`;
+  message += `<b>Alerts fired (last 24h):</b> ${alertsLast24h}\n`;
+
+  if (topTokens.length > 0) {
+    message += `\n<b>Top tokens by watches:</b>\n`;
+    for (let i = 0; i < topTokens.length; i++) {
+      const [symbol, count] = topTokens[i];
+      message += `${i + 1}. ${symbol} — ${count} user${count !== 1 ? "s" : ""}\n`;
+    }
+  }
+
+  await ctx.reply(message, { parse_mode: "HTML" });
 });
 
 bot.command("quiet", async (ctx) => {

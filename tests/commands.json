@@ -18,5 +18,9 @@
   {
     "command": "quiet",
     "description": "Configure quiet hours to suppress alerts during specified time window"
+  },
+  {
+    "command": "stats",
+    "description": "Show bot usage statistics including total users, active watch rules, top tracked tokens, and recent alerts (owner only)"
   }
 ]
